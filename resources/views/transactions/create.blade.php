@@ -67,7 +67,7 @@
                                     <p class="text-xs text-gray-500" x-text="selectedCustomer.phone || 'Tanpa nomor HP'"></p>
                                 </div>
                             </div>
-                            <button type="button" @click="selectedCustomer = null" class="text-gray-400">&times;</button>
+                            <button type="button" @click="selectedCustomer = null; recalculate()" class="text-gray-400">&times;</button>
                         </div>
                         <template x-if="selectedCustomer.is_member">
                             <p class="text-xs text-amber-700 mt-2">⭐ Pelanggan member — otomatis dapat diskon.</p>
@@ -109,35 +109,53 @@
             </div>
 
             {{-- Pilih Promo --}}
-            <div class="bg-white rounded-2xl border border-gray-100 p-5" x-show="promos.length > 0">
+            <div class="bg-white rounded-2xl border border-gray-100 p-5">
                 <h2 class="font-semibold mb-3">Promo Tersedia</h2>
-                <div class="flex flex-wrap gap-2">
-                    <template x-for="promo in promos" :key="promo.id">
-                        <button type="button" @click="selectPromo(promo.id)"
-                                class="border rounded-xl px-4 py-2.5 text-left transition"
-                                :class="selectedPromoId === promo.id ? 'border-brand-500 bg-brand-50' : 'hover:border-gray-300'">
-                            <p class="text-sm font-medium" x-text="promo.name"></p>
-                            <p class="text-xs text-gray-500">
-                                <template x-if="promo.type === 'diskon_persen'">
-                                    <span x-text="promo.value + '% off'"></span>
-                                </template>
-                                <template x-if="promo.type === 'gratis_ongkir'">
-                                    <span>Gratis Ongkir</span>
-                                </template>
-                                <template x-if="!['diskon_persen', 'gratis_ongkir'].includes(promo.type)">
-                                    <span x-text="'Rp ' + Number(promo.value ?? 0).toLocaleString('id-ID')"></span>
-                                </template>
-                            </p>
-                        </button>
-                    </template>
-                </div>
+                <p class="text-xs text-gray-400 mb-2">Server: {{ $promos->count() }} promo | Browser: <span x-text="promos === undefined ? 'undefined' : promos.length"></span></p>
 
-                <template x-if="selectedPromoId && promoUsable === false">
-                    <p class="text-xs text-danger-600 mt-3" x-text="promoReason"></p>
-                </template>
-                <template x-if="selectedPromoId && promoUsable === true">
-                    <p class="text-xs text-success-600 mt-3">✓ Promo berhasil diterapkan.</p>
-                </template>
+                @if($promos->isEmpty())
+                    <p class="text-sm text-gray-500">
+                        @if($totalPromo === 0)
+                            Belum ada promo. Buat promo lewat menu
+                            <a href="{{ route('promos.create') }}" class="text-brand-600 font-medium">Promo</a>.
+                        @else
+                            Tidak ada promo yang aktif hari ini. Ada {{ $totalPromo }} promo tersimpan, tapi tanggal berlakunya
+                            sudah lewat, belum dimulai, atau promonya dinonaktifkan. Cek di menu
+                            <a href="{{ route('promos.index') }}" class="text-brand-600 font-medium">Promo</a>.
+                        @endif
+                    </p>
+                @else
+                    <div class="flex flex-wrap gap-2">
+                        <template x-for="promo in promos" :key="promo.id">
+                            <button type="button" @click="selectPromo(promo.id)"
+                                    class="border rounded-xl px-4 py-2.5 text-left transition"
+                                    :class="selectedPromoId === promo.id ? 'border-brand-500 bg-brand-50' : 'hover:border-gray-300'">
+                                <p class="text-sm font-medium" x-text="promo.name"></p>
+                             <p class="text-xs text-gray-500">
+                                    <template x-if="promo.type === 'gratis_ongkir'">
+                                        <span>Gratis Ongkir</span>
+                                    </template>
+                                    <template x-if="promo.type !== 'gratis_ongkir' && promo.value_type === 'persen'">
+                                        <span x-text="Number(promo.value) + '% off'"></span>
+                                    </template>
+                                    <template x-if="promo.type !== 'gratis_ongkir' && promo.value_type !== 'persen'">
+                                        <span x-text="'Rp ' + Number(promo.value ?? 0).toLocaleString('id-ID')"></span>
+                                    </template>
+                                    <template x-if="promo.type === 'member'">
+                                        <span class="text-amber-600"> · ⭐ Khusus member</span>
+                                    </template>
+                                </p>
+                            </button>
+                        </template>
+                    </div>
+
+                    <template x-if="selectedPromoId && promoUsable === false">
+                        <p class="text-xs text-danger-600 mt-3" x-text="promoReason"></p>
+                    </template>
+                    <template x-if="selectedPromoId && promoUsable === true">
+                        <p class="text-xs text-success-600 mt-3">✓ Promo berhasil diterapkan.</p>
+                    </template>
+                @endif
             </div>
         </div>
 

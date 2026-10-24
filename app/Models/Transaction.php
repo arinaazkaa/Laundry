@@ -28,6 +28,10 @@ class Transaction extends Model
             $t->code = $t->code ?: generate_transaction_code();
         });
     }
+    public function scopeNotCancelled($query)
+    {
+        return $query->where('status', '!=', 'dibatalkan');
+    }
 
     public function customer()
     {

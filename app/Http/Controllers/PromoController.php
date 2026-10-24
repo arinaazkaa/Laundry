@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Promo;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 class PromoController extends Controller
 {
@@ -40,6 +41,7 @@ class PromoController extends Controller
             'description' => 'nullable|string',
             'type' => 'required|in:gratis_ongkir,diskon_persen,diskon_nominal,berdasarkan_berat,minimal_transaksi,member',
             'value' => 'nullable|numeric|min:0',
+            'value_type' => 'nullable|in:persen,nominal',
             'min_transaction' => 'nullable|numeric|min:0',
             'min_weight' => 'nullable|numeric|min:0',
             'start_date' => 'required|date',
@@ -49,10 +51,11 @@ class PromoController extends Controller
             'quota' => 'nullable|integer|min:1',
         ]);
 
-        Promo::create($data);
+        Promo::create($this->normalizeValue($data));
 
         return redirect()->route('promos.index')->with('success', 'Promo berhasil dibuat.');
     }
+
 
     public function show(Promo $promo)
     {
@@ -71,6 +74,7 @@ class PromoController extends Controller
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
             'value' => 'nullable|numeric|min:0',
+            'value_type' => 'nullable|in:persen,nominal',
             'min_transaction' => 'nullable|numeric|min:0',
             'min_weight' => 'nullable|numeric|min:0',
             'start_date' => 'required|date',
@@ -78,9 +82,38 @@ class PromoController extends Controller
             'quota' => 'nullable|integer|min:1',
         ]);
 
-        $promo->update($data);
+        $data['type'] = $promo->type;
+        $promo->update($this->normalizeValue($data));
 
         return redirect()->route('promos.index')->with('success', 'Promo diperbarui.');
+    }
+    private function normalizeValue(array $data): array
+    {
+        $type = $data['type'];
+
+        // Diskon Persen selalu persen, Diskon Nominal selalu rupiah. Tiga jenis lain boleh dipilih
+        $data['value_type'] = match ($type) {
+            'diskon_persen' => 'persen',
+            'diskon_nominal', 'gratis_ongkir' => 'nominal',
+            default => $data['value_type'] ?? 'nominal',
+        };
+
+        if ($type === 'gratis_ongkir') {
+            $data['value'] = null;
+            return $data;
+        }
+
+        $value = (float) ($data['value'] ?? 0);
+
+        if ($value <= 0) {
+            throw ValidationException::withMessages(['value' => 'Nilai promo wajib diisi dan harus lebih dari 0.']);
+        }
+
+        if ($data['value_type'] === 'persen' && $value > 100) {
+            throw ValidationException::withMessages(['value' => 'Diskon persen tidak boleh lebih dari 100.']);
+        }
+
+        return $data;
     }
 
     public function toggleActive(Promo $promo)

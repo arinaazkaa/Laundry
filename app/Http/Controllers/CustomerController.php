@@ -10,10 +10,15 @@ class CustomerController extends Controller
     public function index(Request $request)
     {
         $customers = Customer::withCount('transactions')
-            ->when($request->q, fn ($q) => $q->where('name', 'like', "%{$request->q}%")
-                ->orWhere('phone', 'like', "%{$request->q}%"))
+            ->when($request->q, function ($query) use ($request) {
+                $query->where(function ($sub) use ($request) {
+                    $sub->where('name', 'like', "%{$request->q}%")
+                        ->orWhere('phone', 'like', "%{$request->q}%");
+                });
+            })
             ->latest()
-            ->paginate(15);
+            ->paginate(15)
+            ->withQueryString();
 
         return view('customers.index', compact('customers'));
     }

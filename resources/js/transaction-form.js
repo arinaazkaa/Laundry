@@ -200,6 +200,16 @@ export default function transactionForm(config) {
                     body: JSON.stringify(payload),
                 });
 
+                // 422 = ditolak validasi server (misal promo baru saja habis kuota)
+                if (res.status === 422) {
+                    const err = await res.json();
+                    const message = err.errors?.promo_id?.[0] ?? err.message ?? 'Data transaksi tidak valid.';
+                    alert(message + '\n\nTotal akan dihitung ulang. Periksa lagi sebelum menyimpan.');
+                    this.submitting = false;
+                    await this.recalculate();
+                    return;
+                }
+
                 if (!res.ok) throw new Error('Gagal menyimpan transaksi');
 
                 const data = await res.json();

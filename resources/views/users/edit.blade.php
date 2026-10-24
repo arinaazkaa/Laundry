@@ -35,6 +35,12 @@
                 <input type="email" name="email" value="{{ old('email', $user->email) }}" required class="w-full border-gray-200 rounded-xl mt-1">
             </div>
             <div>
+                <label class="text-sm font-medium text-gray-700">Nomor WhatsApp</label>
+                <input type="text" name="phone" value="{{ old('phone', $user->phone) }}" placeholder="08xxxxxxxxxx"
+                    class="w-full border-gray-200 rounded-xl mt-1">
+                @error('phone') <p class="text-xs text-danger-600 mt-1">{{ $message }}</p> @enderror
+            </div>
+            <div>
                 <label class="text-sm font-medium text-gray-700">Role</label>
                 <select name="role" required class="w-full border-gray-200 rounded-xl mt-1">
                     @foreach($roles as $role)

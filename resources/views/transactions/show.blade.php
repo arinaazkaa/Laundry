@@ -1,19 +1,20 @@
 <x-layouts.app-layout>
     <x-slot name="header"><h1 class="text-lg font-semibold">Detail Transaksi</h1></x-slot>
 
-    <div class="flex items-center justify-between mb-6">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>
             <h1 class="text-2xl font-bold text-gray-900">{{ $transaction->code }}</h1>
             <p class="text-gray-500 text-sm">{{ $transaction->created_at->translatedFormat('d F Y, H:i') }} WIB</p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap gap-2">
             <a href="{{ route('transactions.nota', $transaction) }}" target="_blank"
-                class="border rounded-xl px-4 py-2 text-sm">🖨️ Cetak Nota</a>
+            class="border rounded-xl px-4 py-2 text-sm">🖨️ Cetak Nota</a>
             <a href="{{ route('transactions.nota.download', $transaction) }}"
-                class="border rounded-xl px-4 py-2 text-sm">⬇ Download PDF</a>
-            @if($transaction->status !== 'dibatalkan' && $transaction->status !== 'selesai')
+            class="border rounded-xl px-4 py-2 text-sm">⬇ Download PDF</a>
+
+            @if(!in_array($transaction->status, ['selesai', 'dibatalkan']))
             <form method="POST" action="{{ route('transactions.cancel', $transaction) }}"
-                  onsubmit="return confirm('Batalkan transaksi ini?')">
+                onsubmit="return confirm('Batalkan transaksi ini? Tugas antar-jemput yang belum selesai ikut dibatalkan.')">
                 @csrf @method('PATCH')
                 <button class="border border-danger-200 text-danger-600 rounded-xl px-4 py-2 text-sm">Batalkan</button>
             </form>

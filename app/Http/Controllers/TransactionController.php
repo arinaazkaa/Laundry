@@ -2,51 +2,61 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Customer;
 use App\Models\Promo;
 use App\Models\Service;
 use App\Models\Transaction;
 use App\Services\TransactionCalculator;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Validation\ValidationException;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
-
 
 class TransactionController extends Controller
 {
     public function index(Request $request)
     {
-        $transactions = Transaction::with(['customer', 'cashier'])
-            ->when($request->q, function ($q) use ($request) {
-                $q->where('code', 'like', "%{$request->q}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$request->q}%")
-                        ->orWhere('phone', 'like', "%{$request->q}%"));
-            })
+        $transactions = $this->listTransactions($request);
+        return view('transactions.index', compact('transactions'));
+    }
+
+    public function processing(Request $request)
+    {
+        $transactions = $this->listTransactions($request, ['diproses', 'dicuci', 'dikeringkan', 'disetrika']);
+        return view('transactions.index', compact('transactions'));
+    }
+
+    public function ready(Request $request)
+    {
+        $transactions = $this->listTransactions($request, ['siap_diambil']);
+        return view('transactions.index', compact('transactions'));
+    }
+
+    public function history(Request $request)
+    {
+        $transactions = $this->listTransactions($request, ['selesai', 'dibatalkan']);
+        return view('transactions.index', compact('transactions'));
+    }
+
+    private function listTransactions(Request $request, ?array $statuses = null)
+    {
+        return Transaction::with(['customer', 'cashier'])
+            ->when($statuses, fn ($q) => $q->whereIn('status', $statuses))
             ->when($request->status, fn ($q) => $q->where('status', $request->status))
+            ->when($request->q, function ($q) use ($request) {
+                $q->where(function ($sub) use ($request) {
+                    $sub->where('code', 'like', "%{$request->q}%")
+                        ->orWhereHas('customer', function ($c) use ($request) {
+                            $c->where('name', 'like', "%{$request->q}%")
+                                ->orWhere('phone', 'like', "%{$request->q}%");
+                        });
+                });
+            })
             ->latest()
-            ->paginate(15);
-
-        return view('transactions.index', compact('transactions'));
-    }
-
-    public function processing()
-    {
-        $transactions = Transaction::whereIn('status', ['diproses', 'dicuci', 'dikeringkan', 'disetrika'])
-            ->latest()->paginate(15);
-        return view('transactions.index', compact('transactions'));
-    }
-
-    public function ready()
-    {
-        $transactions = Transaction::where('status', 'siap_diambil')->latest()->paginate(15);
-        return view('transactions.index', compact('transactions'));
-    }
-
-    public function history()
-    {
-        $transactions = Transaction::whereIn('status', ['selesai', 'dibatalkan'])->latest()->paginate(15);
-        return view('transactions.index', compact('transactions'));
+            ->paginate(15)
+            ->withQueryString();
     }
 
     public function create()
@@ -56,9 +66,11 @@ class TransactionController extends Controller
         $promos = Promo::where('is_active', true)
             ->whereDate('start_date', '<=', today())
             ->whereDate('end_date', '>=', today())
-            ->get(['id', 'name', 'type', 'value', 'min_transaction', 'min_weight', 'quota', 'used_count']);
+            ->get(['id', 'name', 'type', 'value', 'value_type', 'min_transaction', 'min_weight', 'quota', 'used_count']);
 
-        return view('transactions.create', compact('services', 'promos'));
+        $totalPromo = Promo::count();
+
+        return view('transactions.create', compact('services', 'promos', 'totalPromo'));
     }
 
     public function store(Request $request, TransactionCalculator $calculator)
@@ -85,18 +97,29 @@ class TransactionController extends Controller
             'unit_type' => $i['type'] === 'kiloan' ? 'kg' : 'pcs',
         ])->toArray();
 
-        $promo = isset($data['promo_id']) ? Promo::find($data['promo_id']) : null;
-        $customer = isset($data['customer_id']) ? \App\Models\Customer::find($data['customer_id']) : null;
+        $customer = isset($data['customer_id']) ? Customer::find($data['customer_id']) : null;
 
-        $result = $calculator->calculate(
-            $calcItems,
-            $promo,
-            $data['use_pickup'] ?? false,
-            $data['use_delivery'] ?? false,
-            $customer
-        );
+        $transaction = DB::transaction(function () use ($data, $calcItems, $customer, $calculator) {
+            // Kunci baris promo supaya 2 kasir yang menyimpan bersamaan tidak bisa melewati kuota
+            $promo = ! empty($data['promo_id'])
+                ? Promo::lockForUpdate()->find($data['promo_id'])
+                : null;
 
-        $transaction = DB::transaction(function () use ($data, $result, $promo, $request) {
+            $result = $calculator->calculate(
+                $calcItems,
+                $promo,
+                $data['use_pickup'] ?? false,
+                $data['use_delivery'] ?? false,
+                $customer
+            );
+
+            // Promo dipilih tapi tidak berlaku: tolak dengan alasan jelas, jangan disimpan diam-diam tanpa diskon
+            if ($promo && ! $result['promo_applied']) {
+                throw ValidationException::withMessages([
+                    'promo_id' => $result['promo_reason'] ?? 'Promo tidak dapat digunakan.',
+                ]);
+            }
+
             $paid = $data['paid_amount'] ?? 0;
             $paymentStatus = 'belum_bayar';
             if ($paid >= $result['total'] && $result['total'] > 0) {
@@ -132,6 +155,24 @@ class TransactionController extends Controller
                 ]);
             }
 
+            if ($transaction->use_pickup) {
+                $transaction->pickupDeliveries()->create([
+                    'type' => 'pickup',
+                    'status' => 'dijadwalkan',
+                    'scheduled_at' => now(),
+                    'address' => $customer?->address,
+                ]);
+            }
+
+            if ($transaction->use_delivery) {
+                $transaction->pickupDeliveries()->create([
+                    'type' => 'delivery',
+                    'status' => 'dijadwalkan',
+                    'scheduled_at' => $transaction->estimated_done_at,
+                    'address' => $customer?->address,
+                ]);
+            }
+
             if ($paid > 0) {
                 $transaction->payments()->create([
                     'amount' => min($paid, $result['total']),
@@ -140,6 +181,7 @@ class TransactionController extends Controller
                 ]);
             }
 
+            // Kuota hanya berkurang kalau promo benar-benar berefek (lolos pengecekan di atas)
             if ($promo) {
                 $promo->increment('used_count');
                 $promo->usages()->create([
@@ -178,12 +220,7 @@ class TransactionController extends Controller
         ])->toArray();
 
         $promo = isset($data['promo_id']) ? Promo::find($data['promo_id']) : null;
-        $customer = isset($data['customer_id']) ? \App\Models\Customer::find($data['customer_id']) : null;
-
-        $subtotal = collect($calcItems)->sum(fn ($i) => $i['qty'] * $i['price_per_unit']);
-        $totalWeight = collect($calcItems)->where('unit_type', 'kg')->sum('qty');
-
-        $promoUsable = $promo ? $promo->isUsable($subtotal, $totalWeight) : null;
+        $customer = isset($data['customer_id']) ? Customer::find($data['customer_id']) : null;
 
         $result = $calculator->calculate(
             $calcItems,
@@ -195,39 +232,8 @@ class TransactionController extends Controller
 
         return response()->json([
             ...$result,
-            'promo_usable' => $promoUsable,
-            'promo_reason' => $promo && !$promoUsable ? $this->promoIneligibleReason($promo, $subtotal, $totalWeight) : null,
+            'promo_usable' => $promo ? $result['promo_applied'] : null,
         ]);
-    }
-
-    private function promoIneligibleReason(Promo $promo, float $subtotal, float $totalWeight): string
-    {
-        if ($promo->status_label !== 'aktif') {
-            return match ($promo->status_label) {
-                'belum_dimulai' => 'Promo ini belum dimulai.',
-                'kadaluarsa' => 'Promo ini sudah tidak berlaku.',
-                'habis_kuota' => 'Promo sudah mencapai batas penggunaan.',
-                'nonaktif' => 'Promo sedang dinonaktifkan.',
-                default => 'Promo tidak dapat digunakan saat ini.',
-            };
-        }
-
-        if ($promo->start_time && $promo->end_time) {
-            $now = now()->format('H:i:s');
-            if ($now < $promo->start_time || $now > $promo->end_time) {
-                return 'Promo ini hanya berlaku pukul ' . substr($promo->start_time, 0, 5) . ' - ' . substr($promo->end_time, 0, 5) . '.';
-            }
-        }
-
-        if ($promo->min_transaction && $subtotal < $promo->min_transaction) {
-            return 'Minimal transaksi Rp ' . number_format($promo->min_transaction, 0, ',', '.') . ' belum terpenuhi.';
-        }
-
-        if ($promo->min_weight && $totalWeight < $promo->min_weight) {
-            return 'Minimal berat ' . $promo->min_weight . ' kg belum terpenuhi.';
-        }
-
-        return 'Promo tidak dapat digunakan saat ini.';
     }
 
     public function show(Transaction $transaction)
@@ -235,6 +241,7 @@ class TransactionController extends Controller
         $transaction->load(['customer', 'cashier', 'items', 'payments', 'promo']);
         return view('transactions.show', compact('transaction'));
     }
+
     public function printNota(Transaction $transaction)
     {
         $transaction->load(['customer', 'cashier', 'items']);
@@ -271,6 +278,12 @@ class TransactionController extends Controller
     public function cancel(Transaction $transaction)
     {
         $transaction->update(['status' => 'dibatalkan']);
+
+        // Tugas antar-jemput yang belum selesai ikut dibatalkan
+        $transaction->pickupDeliveries()
+            ->where('status', '!=', 'selesai')
+            ->update(['status' => 'dibatalkan']);
+
         return back()->with('success', 'Transaksi dibatalkan.');
     }
 

@@ -20,12 +20,12 @@ class Customer extends Model
 
     public function getTotalTransactionsAttribute(): int
     {
-        return $this->transactions()->count();
+        return $this->transactions()->notCancelled()->count();
     }
 
     public function getTotalSpentAttribute(): float
     {
-        return $this->transactions()->sum('total');
+        return $this->transactions()->notCancelled()->sum('total');
     }
 
     public function getIsEligibleForMemberAttribute(): bool

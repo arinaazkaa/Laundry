@@ -5,7 +5,12 @@
         <h1 class="text-2xl font-bold mb-6">Buat Promo Baru</h1>
 
         <form method="POST" action="{{ route('promos.store') }}"
-              x-data="{ type: '{{ old('type', 'diskon_persen') }}' }"
+              x-data="{
+                type: '{{ old('type', 'diskon_persen') }}',
+                valueType: '{{ old('value_type', 'persen') }}',
+                flexible() { return ['berdasarkan_berat', 'minimal_transaksi', 'member'].includes(this.type); },
+                isPercent() { return this.type === 'diskon_persen' || (this.flexible() && this.valueType === 'persen'); }
+            }"
               class="bg-white rounded-2xl border border-gray-100 p-6 space-y-4">
             @csrf
 
@@ -32,11 +37,21 @@
                 </select>
             </div>
 
-            <div x-show="type !== 'gratis_ongkir'">
-                <label class="text-sm font-medium text-gray-700">
-                    Nilai <span x-text="type === 'diskon_persen' ? '(%)' : '(Rp)'"></span>
-                </label>
-                <input type="number" name="value" value="{{ old('value') }}" min="0" class="w-full border-gray-200 rounded-xl mt-1">
+            <div x-show="type !== 'gratis_ongkir'" class="grid grid-cols-2 gap-4">
+                <div x-show="flexible()">
+                    <label class="text-sm font-medium text-gray-700">Bentuk Potongan</label>
+                    <select name="value_type" x-model="valueType" class="w-full border-gray-200 rounded-xl mt-1">
+                        <option value="persen">Persen (%)</option>
+                        <option value="nominal">Rupiah (Rp)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-sm font-medium text-gray-700">
+                        Nilai <span x-text="isPercent() ? '(%)' : '(Rp)'"></span>
+                    </label>
+                    <input type="number" step="any" name="value" value="{{ old('value') }}" min="0" class="w-full border-gray-200 rounded-xl mt-1">
+                    @error('value') <p class="text-xs text-danger-600 mt-1">{{ $message }}</p> @enderror
+                </div>
             </div>
 
             <div class="grid grid-cols-2 gap-4">

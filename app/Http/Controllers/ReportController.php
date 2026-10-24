@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Expense;
+use App\Models\Payment;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 
@@ -15,43 +16,49 @@ class ReportController extends Controller
 
     public function finance(Request $request)
     {
-        $period = $request->get('period', 'month'); // month, week, year, custom
+        $period = $request->get('period', 'month'); // today, week, month, year, custom
         [$start, $end] = $this->resolvePeriod($period, $request);
 
-        $totalRevenue = Transaction::whereBetween('created_at', [$start, $end])->sum('total');
+        // Pemasukan = uang yang benar-benar diterima, tanpa transaksi dibatalkan
+        $totalRevenue = Payment::valid()->whereBetween('created_at', [$start, $end])->sum('amount');
         $totalExpense = Expense::whereBetween('date', [$start, $end])->sum('amount');
         $netProfit = $totalRevenue - $totalExpense;
 
-        // Perbandingan periode sebelumnya (untuk badge naik/turun)
-        $prevLength = $start->diffInDays($end) + 1;
-        $prevStart = (clone $start)->subDays($prevLength);
-        $prevEnd = (clone $start)->subDay();
-        $prevRevenue = Transaction::whereBetween('created_at', [$prevStart, $prevEnd])->sum('total');
-        $revenueChangePercent = $prevRevenue > 0 ? round((($totalRevenue - $prevRevenue) / $prevRevenue) * 100, 1) : 0;
+        // Periode pembanding: rentang waktu yang sama panjang, tepat sebelum periode ini
+        $prevEnd = (clone $start)->subSecond();
+        $prevStart = (clone $prevEnd)->subSeconds((int) $start->diffInSeconds($end));
+        $prevRevenue = Payment::valid()->whereBetween('created_at', [$prevStart, $prevEnd])->sum('amount');
+        $revenueChangePercent = $prevRevenue > 0
+            ? round((($totalRevenue - $prevRevenue) / $prevRevenue) * 100, 1)
+            : 0;
 
         // Tren 6 bulan terakhir untuk grafik batang
         $monthlyTrend = collect(range(5, 0))->mapWithKeys(function ($monthsAgo) {
-            $month = now()->subMonths($monthsAgo);
-            $total = Transaction::whereYear('created_at', $month->year)
+            $month = now()->startOfMonth()->subMonths($monthsAgo);
+            $total = Payment::valid()
+                ->whereYear('created_at', $month->year)
                 ->whereMonth('created_at', $month->month)
-                ->sum('total');
+                ->sum('amount');
             return [$month->translatedFormat('M') => $total];
         });
 
-        // Distribusi metode pembayaran
-        $paymentDistribution = Transaction::whereBetween('created_at', [$start, $end])
-            ->whereNotNull('payment_method')
-            ->selectRaw('payment_method, COUNT(*) as total')
-            ->groupBy('payment_method')
-            ->pluck('total', 'payment_method');
+        // Distribusi metode pembayaran (berdasarkan nominal uang yang masuk)
+        $paymentDistribution = Payment::valid()
+            ->whereBetween('created_at', [$start, $end])
+            ->selectRaw('method, SUM(amount) as total')
+            ->groupBy('method')
+            ->pluck('total', 'method');
 
         $totalTransactionsCount = $paymentDistribution->sum();
 
         $transactions = Transaction::with('customer')
+            ->notCancelled()
             ->whereBetween('created_at', [$start, $end])
-            ->when($request->q, function ($q) use ($request) {
-                $q->where('code', 'like', "%{$request->q}%")
-                    ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$request->q}%"));
+            ->when($request->q, function ($query) use ($request) {
+                $query->where(function ($sub) use ($request) {
+                    $sub->where('code', 'like', "%{$request->q}%")
+                        ->orWhereHas('customer', fn ($c) => $c->where('name', 'like', "%{$request->q}%"));
+                });
             })
             ->latest()
             ->paginate(10)
@@ -87,7 +94,10 @@ class ReportController extends Controller
 
         $filename = 'laporan-keuangan-' . now()->format('Ymd-His') . '.csv';
 
-        $transactions = Transaction::with('customer')->whereBetween('created_at', [$start, $end])->get();
+        $transactions = Transaction::with('customer')
+            ->notCancelled()
+            ->whereBetween('created_at', [$start, $end])
+            ->get();
 
         return response()->streamDownload(function () use ($transactions) {
             $handle = fopen('php://output', 'w');

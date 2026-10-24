@@ -56,12 +56,14 @@
 
                 <h3 class="font-semibold text-lg text-gray-900">{{ $promo->name }}</h3>
 
-                @if($promo->type === 'diskon_persen')
-                    <p class="text-2xl font-bold text-brand-600 mt-1">{{ (int) $promo->value }}% <span class="text-sm font-normal text-gray-400">Off</span></p>
-                @elseif(in_array($promo->type, ['diskon_nominal', 'berdasarkan_berat', 'minimal_transaksi', 'member']))
-                    <p class="text-2xl font-bold text-success-600 mt-1">Rp {{ number_format($promo->value, 0, ',', '.') }}</p>
+                @if($promo->type === 'gratis_ongkir')
+                    <p class="text-sm text-gray-500 mt-1">{{ $promo->description ?: 'Ongkir jemput/antar gratis' }}</p>
+                @elseif($promo->value_type === 'persen')
+                    <p class="text-2xl font-bold text-brand-600 mt-1">
+                        {{ rtrim(rtrim(number_format($promo->value, 2, '.', ''), '0'), '.') }}% <span class="text-sm font-normal text-gray-400">Off</span>
+                    </p>
                 @else
-                    <p class="text-sm text-gray-500 mt-1">{{ $promo->description }}</p>
+                    <p class="text-2xl font-bold text-success-600 mt-1">Rp {{ number_format($promo->value, 0, ',', '.') }}</p>
                 @endif
 
                 <div class="mt-3 space-y-1.5 text-sm text-gray-500">

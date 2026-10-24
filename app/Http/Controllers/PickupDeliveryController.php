@@ -9,11 +9,11 @@ class PickupDeliveryController extends Controller
 {
     public function index(Request $request)
     {
-        $query = PickupDelivery::with('transaction.customer')
+        $tasks = PickupDelivery::with('transaction.customer')
+            ->whereNotIn('status', ['selesai', 'dibatalkan'])
             ->when($request->type, fn ($q) => $q->where('type', $request->type))
-            ->latest();
-
-        $tasks = $query->get();
+            ->latest()
+            ->get();
 
         return view('pickups.index', [
             'tasks' => $tasks,

@@ -6,23 +6,19 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->string('phone')->nullable()->after('avatar');
-        });
+        if (! Schema::hasColumn('users', 'phone')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->string('phone', 20)->nullable()->after('email');
+            });
+        }
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            //
+            $table->dropColumn('phone');
         });
     }
 };

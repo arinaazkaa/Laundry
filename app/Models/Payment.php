@@ -17,4 +17,10 @@ class Payment extends Model
     {
         return $this->belongsTo(User::class, 'received_by');
     }
+
+    // Hanya pembayaran dari transaksi yang tidak dibatalkan
+    public function scopeValid($query)
+    {
+        return $query->whereHas('transaction', fn ($q) => $q->where('status', '!=', 'dibatalkan'));
+    }
 }

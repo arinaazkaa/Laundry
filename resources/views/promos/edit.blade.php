@@ -17,10 +17,27 @@
                 <textarea name="description" rows="2" class="w-full border-gray-200 rounded-xl mt-1">{{ old('description', $promo->description) }}</textarea>
             </div>
 
-            <div>
-                <label class="text-sm font-medium text-gray-700">Nilai</label>
-                <input type="number" name="value" value="{{ old('value', $promo->value) }}" min="0" class="w-full border-gray-200 rounded-xl mt-1">
-            </div>
+            @if($promo->type !== 'gratis_ongkir')
+                @php $flexible = in_array($promo->type, ['berdasarkan_berat', 'minimal_transaksi', 'member']); @endphp
+                <div class="grid grid-cols-2 gap-4">
+                    @if($flexible)
+                    <div>
+                        <label class="text-sm font-medium text-gray-700">Bentuk Potongan</label>
+                        <select name="value_type" class="w-full border-gray-200 rounded-xl mt-1">
+                            <option value="persen" {{ old('value_type', $promo->value_type) === 'persen' ? 'selected' : '' }}>Persen (%)</option>
+                            <option value="nominal" {{ old('value_type', $promo->value_type) === 'nominal' ? 'selected' : '' }}>Rupiah (Rp)</option>
+                        </select>
+                    </div>
+                    @endif
+                    <div>
+                        <label class="text-sm font-medium text-gray-700">
+                            Nilai @unless($flexible) ({{ $promo->value_type === 'persen' ? '%' : 'Rp' }}) @endunless
+                        </label>
+                        <input type="number" step="any" name="value" value="{{ old('value', $promo->value + 0) }}" min="0" class="w-full border-gray-200 rounded-xl mt-1">
+                        @error('value') <p class="text-xs text-danger-600 mt-1">{{ $message }}</p> @enderror
+                    </div>
+                </div>
+            @endif
 
             <div class="grid grid-cols-2 gap-4">
                 <div>

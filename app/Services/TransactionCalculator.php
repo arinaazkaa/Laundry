@@ -19,6 +19,7 @@ class TransactionCalculator
             }
         }
 
+        // Ongkir dasar sesuai Jemput/Antar yang dipilih
         $deliveryFee = 0;
         if ($usePickup && setting('pickup_enabled')) {
             $deliveryFee += (float) setting('pickup_fee', 0);
@@ -27,30 +28,52 @@ class TransactionCalculator
             $deliveryFee += (float) setting('delivery_fee', 0);
         }
 
+        // Gratis ongkir otomatis. Hanya dihitung kalau memang ada ongkir yang digratiskan
         $freeOngkirApplied = false;
-        if (setting('free_ongkir_enabled') && $totalWeight >= (float) setting('free_ongkir_min_weight', 0)) {
+        if ($deliveryFee > 0
+            && setting('free_ongkir_enabled')
+            && $totalWeight >= (float) setting('free_ongkir_min_weight', 0)) {
             $deliveryFee = 0;
             $freeOngkirApplied = true;
         }
 
+        // Promo (satu transaksi satu promo)
         $discount = 0;
-        $memberDiscountApplied = false;
+        $promoApplied = false;
+        $promoReason = null;
 
-        // Diskon promo (kalau ada & lebih besar dari diskon member, pakai yang lebih menguntungkan pelanggan)
-        if ($promo && $promo->isUsable($subtotal, $totalWeight)) {
-            $discount = $promo->calculateDiscount($subtotal);
-            if ($promo->type === 'gratis_ongkir') {
-                $deliveryFee = 0;
-                $freeOngkirApplied = true;
+        if ($promo) {
+            $promoReason = $promo->ineligibleReason($subtotal, $totalWeight, $customer);
+
+            if ($promoReason === null) {
+                if ($promo->type === 'gratis_ongkir') {
+                    if ($deliveryFee > 0) {
+                        $deliveryFee = 0;
+                        $freeOngkirApplied = true;
+                        $promoApplied = true;
+                    } elseif ($freeOngkirApplied) {
+                        $promoReason = 'Ongkir sudah gratis dari aturan gratis ongkir otomatis, promo ini tidak diperlukan.';
+                    } else {
+                        $promoReason = 'Promo Gratis Ongkir hanya berlaku kalau Jemput atau Antar dipilih.';
+                    }
+                } else {
+                    $discount = $promo->calculateDiscount($subtotal);
+                    $promoApplied = $discount > 0;
+
+                    if (! $promoApplied) {
+                        $promoReason = 'Promo ini tidak memberi potongan untuk transaksi ini.';
+                    }
+                }
             }
         }
 
-        // Diskon otomatis untuk member (hanya jika tidak sedang pakai promo lain, sesuai aturan "promo tidak boleh bertumpuk")
-        if ($customer && $customer->is_member && $discount === 0) {
-            $memberDiscountPercent = (float) setting('member_discount_percent', 0);
-            if ($memberDiscountPercent > 0) {
-                $discount = round($subtotal * ($memberDiscountPercent / 100));
-                $memberDiscountApplied = true;
+        // Diskon member otomatis, hanya kalau tidak ada promo yang berlaku
+        $memberDiscountApplied = false;
+        if ($customer && $customer->is_member && ! $promoApplied) {
+            $percent = (float) setting('member_discount_percent', 0);
+            if ($percent > 0) {
+                $discount = min($subtotal, round($subtotal * ($percent / 100)));
+                $memberDiscountApplied = $discount > 0;
             }
         }
 
@@ -64,6 +87,8 @@ class TransactionCalculator
             'total_weight' => $totalWeight,
             'free_ongkir_applied' => $freeOngkirApplied,
             'member_discount_applied' => $memberDiscountApplied,
+            'promo_applied' => $promoApplied,
+            'promo_reason' => $promoReason,
         ];
     }
 }

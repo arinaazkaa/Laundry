@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Customer;
 use App\Models\Promo;
+use App\Models\PromoUsage;
 use App\Models\Service;
 use App\Models\Transaction;
 use App\Services\TransactionCalculator;
@@ -90,7 +91,6 @@ class TransactionController extends Controller
             'paid_amount' => 'nullable|numeric|min:0',
         ]);
 
-        // Susun ulang item untuk kalkulator (server-side, tidak percaya angka total dari frontend)
         $calcItems = collect($data['items'])->map(fn ($i) => [
             'qty' => $i['qty'],
             'price_per_unit' => $i['price'],
@@ -113,7 +113,6 @@ class TransactionController extends Controller
                 $customer
             );
 
-            // Promo dipilih tapi tidak berlaku: tolak dengan alasan jelas, jangan disimpan diam-diam tanpa diskon
             if ($promo && ! $result['promo_applied']) {
                 throw ValidationException::withMessages([
                     'promo_id' => $result['promo_reason'] ?? 'Promo tidak dapat digunakan.',
@@ -181,7 +180,6 @@ class TransactionController extends Controller
                 ]);
             }
 
-            // Kuota hanya berkurang kalau promo benar-benar berefek (lolos pengecekan di atas)
             if ($promo) {
                 $promo->increment('used_count');
                 $promo->usages()->create([
@@ -238,14 +236,14 @@ class TransactionController extends Controller
 
     public function show(Transaction $transaction)
     {
-        $transaction->load(['customer', 'cashier', 'items', 'payments', 'promo']);
+        $transaction->load(['customer', 'cashier', 'items', 'payments', 'promo', 'pickupDeliveries']);
         return view('transactions.show', compact('transaction'));
     }
 
     public function printNota(Transaction $transaction)
     {
         $transaction->load(['customer', 'cashier', 'items']);
-        $qrCodeSvg = QrCode::size(120)->generate(route('tracking.show', $transaction->code));
+        $qrCodeSvg = QrCode::size(120)->generate(route('tracking.show', $transaction->tracking_token));
 
         $pdf = Pdf::loadView('transactions.nota', compact('transaction', 'qrCodeSvg'))
             ->setPaper([0, 0, 226.77, 800], 'portrait');
@@ -256,7 +254,7 @@ class TransactionController extends Controller
     public function downloadNota(Transaction $transaction)
     {
         $transaction->load(['customer', 'cashier', 'items']);
-        $qrCodeSvg = QrCode::size(120)->generate(route('tracking.show', $transaction->code));
+        $qrCodeSvg = QrCode::size(120)->generate(route('tracking.show', $transaction->tracking_token));
 
         $pdf = Pdf::loadView('transactions.nota', compact('transaction', 'qrCodeSvg'))
             ->setPaper([0, 0, 226.77, 800], 'portrait');
@@ -267,29 +265,72 @@ class TransactionController extends Controller
     public function updateStatus(Request $request, Transaction $transaction)
     {
         $request->validate([
-            'status' => 'required|in:menunggu,diproses,dicuci,dikeringkan,disetrika,siap_diambil,selesai,dibatalkan',
+            'status' => 'required|in:' . implode(',', Transaction::STATUS_FLOW),
         ]);
+
+        if ($transaction->status === 'dibatalkan') {
+            return back()->with('error', 'Transaksi yang sudah dibatalkan tidak dapat diubah statusnya.');
+        }
 
         $transaction->update(['status' => $request->status]);
 
         return back()->with('success', 'Status transaksi diperbarui menjadi ' . str_replace('_', ' ', $request->status) . '.');
     }
 
-    public function cancel(Transaction $transaction)
+    public function cancel(Request $request, Transaction $transaction)
     {
-        $transaction->update(['status' => 'dibatalkan']);
+        $isOwner = $request->user()->hasRole('pemilik');
 
-        // Tugas antar-jemput yang belum selesai ikut dibatalkan
-        $transaction->pickupDeliveries()
-            ->where('status', '!=', 'selesai')
-            ->update(['status' => 'dibatalkan']);
+        $error = DB::transaction(function () use ($transaction, $isOwner) {
+            $trx = Transaction::lockForUpdate()->findOrFail($transaction->id);
 
-        return back()->with('success', 'Transaksi dibatalkan.');
+            if (in_array($trx->status, ['selesai', 'dibatalkan'])) {
+                return 'Transaksi berstatus ' . str_replace('_', ' ', $trx->status) . ' tidak dapat dibatalkan.';
+            }
+
+            // Batasan untuk kasir
+            if (! $isOwner) {
+                if ((float) $trx->paid_amount > 0) {
+                    return 'Transaksi yang sudah ada pembayarannya hanya bisa dibatalkan pemilik.';
+                }
+                if ($trx->created_at->lt(now()->subHours(2))) {
+                    return 'Kasir hanya bisa membatalkan transaksi dalam 2 jam pertama. Hubungi pemilik.';
+                }
+            }
+
+            $trx->update(['status' => 'dibatalkan']);
+
+            $trx->pickupDeliveries()
+                ->where('status', '!=', 'selesai')
+                ->update(['status' => 'dibatalkan']);
+
+            $released = PromoUsage::where('transaction_id', $trx->id)->delete();
+            if ($released > 0 && $trx->promo_id) {
+                Promo::whereKey($trx->promo_id)
+                    ->where('used_count', '>=', $released)
+                    ->decrement('used_count', $released);
+            }
+
+            return null;
+        });
+
+        if ($error) {
+            return back()->with('error', $error);
+        }
+
+        $message = 'Transaksi dibatalkan.';
+        $paid = (float) $transaction->paid_amount;
+        if ($paid > 0) {
+            $message .= ' Pembayaran Rp ' . number_format($paid, 0, ',', '.') . ' yang sudah diterima perlu dikembalikan ke pelanggan.';
+        }
+
+        return back()->with('success', $message);
     }
 
     public function processQueue()
     {
-        $transactions = Transaction::whereNotIn('status', ['selesai', 'dibatalkan'])
+        $transactions = Transaction::with(['customer', 'items'])
+            ->whereNotIn('status', ['selesai', 'dibatalkan'])
             ->orderBy('created_at')
             ->get();
 

@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Support\Facades\Storage;
 use App\Models\User;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Spatie\Permission\Models\Role;
 
 class UserController extends Controller
@@ -79,6 +80,11 @@ class UserController extends Controller
             'avatar' => 'nullable|image|max:2048',
         ]);
 
+        // Pemilik tidak boleh menurunkan role akunnya sendiri, supaya tidak terkunci dari sistem
+        if ($user->id === Auth::id() && $data['role'] !== 'pemilik') {
+            return back()->withInput()->with('error', 'Kamu tidak bisa mengubah role akunmu sendiri.');
+        }
+
         $avatarPath = $user->avatar;
         if ($request->hasFile('avatar')) {
             if ($user->avatar) {
@@ -91,7 +97,7 @@ class UserController extends Controller
             'name' => $data['name'],
             'email' => $data['email'],
             'phone' => $data['phone'] ?? null,
-            'password' => $data['password'] ? Hash::make($data['password']) : $user->password,
+            'password' => ! empty($data['password']) ? Hash::make($data['password']) : $user->password,
             'avatar' => $avatarPath,
         ]);
 
@@ -106,7 +112,16 @@ class UserController extends Controller
             return back()->with('error', 'Kamu tidak bisa menghapus akunmu sendiri.');
         }
 
-        $user->delete();
+        try {
+            $user->delete();
+        } catch (QueryException $e) {
+            // Akun yang sudah mencatat transaksi, pembayaran, atau pengeluaran tidak boleh dihapus
+            return back()->with('error', 'Pengguna ini sudah punya riwayat pencatatan sehingga tidak bisa dihapus.');
+        }
+
+        if ($user->avatar) {
+            Storage::disk('public')->delete($user->avatar);
+        }
 
         return redirect()->route('users.index')->with('success', 'Pengguna dihapus.');
     }

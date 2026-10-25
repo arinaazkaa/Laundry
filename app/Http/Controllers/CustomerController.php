@@ -91,6 +91,11 @@ class CustomerController extends Controller
             'is_member' => 'boolean',
         ]);
 
+        // Status member hanya boleh diubah pemilik
+        if (! $request->user()->hasRole('pemilik')) {
+            unset($data['is_member']);
+        }
+
         $customer->update($data);
 
         return redirect()->route('customers.index')->with('success', 'Data pelanggan diperbarui.');

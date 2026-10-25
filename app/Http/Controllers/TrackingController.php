@@ -3,21 +3,22 @@
 namespace App\Http\Controllers;
 
 use App\Models\Transaction;
-use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class TrackingController extends Controller
 {
-    public function show(string $code)
+    public function show(string $token)
     {
-        $transaction = Transaction::with(['items'])
-            ->where('code', $code)
+        $transaction = Transaction::with(['items', 'customer'])
+            ->where('tracking_token', $token)
             ->firstOrFail();
 
-        // Hanya expose data yang aman untuk publik — TIDAK ada nama kasir,
-        // TIDAK ada nomor HP pelanggan, TIDAK ada harga per item (cukup total)
+        // Hanya data yang aman untuk publik. Nama ditampilkan nama depan saja
         return view('tracking.show', [
             'code' => $transaction->code,
-            'customerName' => $transaction->customer->name ?? 'Pelanggan',
+            'customerName' => $transaction->customer
+                ? Str::of($transaction->customer->name)->before(' ')->toString()
+                : 'Pelanggan',
             'status' => $transaction->status,
             'paymentStatus' => $transaction->payment_status,
             'total' => $transaction->total,

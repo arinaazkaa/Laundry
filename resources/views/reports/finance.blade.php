@@ -6,20 +6,35 @@
     <div class="flex items-center justify-between mb-6">
         <div>
             <h1 class="text-3xl font-bold text-gray-900">Laporan Keuangan</h1>
-            <p class="text-gray-500">Ringkasan performa finansial {{ $period === 'month' ? 'bulan ini' : $period }}.</p>
+            <p class="text-gray-500">Ringkasan performa finansial {{ $periodLabel }}.</p>
         </div>
         <a href="{{ route('reports.export', request()->query()) }}"
            class="border rounded-xl px-4 py-2.5 text-sm font-medium">⬇ Export Report</a>
     </div>
 
-    <form method="GET" class="flex bg-white border rounded-xl p-1 text-sm w-fit mb-6">
-        @foreach(['today' => 'Hari Ini', 'week' => 'Minggu Ini', 'month' => 'Bulan Ini', 'year' => 'Tahun Ini'] as $key => $label)
-            <button type="submit" name="period" value="{{ $key }}"
-                    class="px-4 py-1.5 rounded-lg {{ $period === $key ? 'bg-brand-600 text-white' : '' }}">{{ $label }}</button>
-        @endforeach
-    </form>
+    {{-- Filter periode --}}
+    <div x-data="{ custom: {{ $period === 'custom' ? 'true' : 'false' }} }" class="mb-6">
+        <div class="flex flex-wrap items-center gap-3">
+            <form method="GET" class="flex bg-white border rounded-xl p-1 text-sm w-fit">
+                @foreach(['today' => 'Hari Ini', 'week' => 'Minggu Ini', 'month' => 'Bulan Ini', 'year' => 'Tahun Ini'] as $key => $label)
+                    <button type="submit" name="period" value="{{ $key }}"
+                            class="px-4 py-1.5 rounded-lg {{ $period === $key ? 'bg-brand-600 text-white' : '' }}">{{ $label }}</button>
+                @endforeach
+                <button type="button" @click="custom = !custom"
+                        class="px-4 py-1.5 rounded-lg {{ $period === 'custom' ? 'bg-brand-600 text-white' : '' }}">Custom</button>
+            </form>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <form x-show="custom" x-cloak method="GET" class="flex flex-wrap items-center gap-2">
+                <input type="hidden" name="period" value="custom">
+                <input type="date" name="start" value="{{ $startDate }}" required class="border-gray-200 rounded-xl text-sm">
+                <span class="text-gray-400 text-sm">s/d</span>
+                <input type="date" name="end" value="{{ $endDate }}" required class="border-gray-200 rounded-xl text-sm">
+                <button class="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-medium">Terapkan</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <div class="bg-white rounded-2xl border border-gray-100 p-5">
             <div class="flex justify-between items-start mb-3">
                 <div class="w-9 h-9 rounded-lg bg-success-50 flex items-center justify-center text-success-600">↑</div>
@@ -29,6 +44,7 @@
             </div>
             <p class="text-sm text-gray-500">Total Pemasukan</p>
             <p class="text-2xl font-bold mt-1">Rp {{ number_format($totalRevenue, 0, ',', '.') }}</p>
+            <p class="text-xs text-gray-400 mt-1">Uang yang sudah diterima</p>
         </div>
 
         <div class="bg-white rounded-2xl border border-gray-100 p-5">
@@ -43,32 +59,50 @@
             <p class="text-2xl font-bold mt-1">Rp {{ number_format($netProfit, 0, ',', '.') }}</p>
             <p class="text-xs text-brand-100 mt-2">Margin: {{ $margin }}%</p>
         </div>
+
+        <a href="{{ route('reports.receivables') }}"
+           class="block bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-sm transition">
+            <div class="w-9 h-9 rounded-lg bg-warning-50 flex items-center justify-center text-warning-600 mb-3">!</div>
+            <p class="text-sm text-gray-500">Piutang (Belum Lunas)</p>
+            <p class="text-2xl font-bold mt-1 text-warning-600">Rp {{ number_format($receivableTotal, 0, ',', '.') }}</p>
+            <p class="text-xs text-gray-400 mt-1">{{ $receivableCount }} transaksi, per hari ini. Lihat rincian →</p>
+        </a>
     </div>
 
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
         <div class="lg:col-span-2 bg-white rounded-2xl border border-gray-100 p-5">
-            <h2 class="font-semibold mb-4">Tren Pendapatan Bulanan</h2>
+            <h2 class="font-semibold mb-4">Tren Pendapatan 6 Bulan Terakhir</h2>
             <canvas id="trendChart" height="100"></canvas>
         </div>
+
         <div class="bg-white rounded-2xl border border-gray-100 p-5">
             <h2 class="font-semibold mb-4">Distribusi Pembayaran</h2>
-            <canvas id="paymentChart" height="160"></canvas>
-            <div class="mt-4 space-y-2 text-sm">
-                @foreach($paymentDistribution as $method => $count)
-                    <div class="flex justify-between">
-                        <span class="capitalize text-gray-600">{{ $method }}</span>
-                        <span class="font-medium">{{ $totalTransactionsCount > 0 ? round(($count / $totalTransactionsCount) * 100) : 0 }}%</span>
-                    </div>
-                @endforeach
-            </div>
+
+            @if($paymentDistribution->isEmpty())
+                <p class="text-sm text-gray-400">Belum ada pembayaran pada periode ini.</p>
+            @else
+                <canvas id="paymentChart" height="160"></canvas>
+                <div class="mt-4 space-y-2 text-sm">
+                    @foreach($paymentDistribution as $method => $amount)
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">{{ $method }}</span>
+                            <span class="font-medium">{{ $paymentTotal > 0 ? round(($amount / $paymentTotal) * 100) : 0 }}%</span>
+                        </div>
+                    @endforeach
+                </div>
+            @endif
         </div>
     </div>
 
     <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-        <div class="p-5 flex items-center justify-between">
+        <div class="p-5 flex items-center justify-between gap-3">
             <h2 class="font-semibold">Riwayat Transaksi</h2>
             <form method="GET" class="flex gap-2">
                 <input type="hidden" name="period" value="{{ $period }}">
+                @if($period === 'custom')
+                    <input type="hidden" name="start" value="{{ $startDate }}">
+                    <input type="hidden" name="end" value="{{ $endDate }}">
+                @endif
                 <input type="text" name="q" value="{{ request('q') }}" placeholder="Cari ID / Nama..."
                        class="border-gray-200 rounded-xl text-sm" onchange="this.form.submit()">
             </form>
@@ -84,8 +118,8 @@
                             <th class="px-4 py-3 font-medium">ID Transaksi</th>
                             <th class="px-4 py-3 font-medium">Tanggal</th>
                             <th class="px-4 py-3 font-medium">Pelanggan</th>
-                            <th class="px-4 py-3 font-medium">Metode</th>
-                            <th class="px-4 py-3 font-medium">Total</th>
+                            <th class="px-4 py-3 font-medium">Pembayaran</th>
+                            <th class="px-4 py-3 font-medium text-right">Total</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -96,10 +130,8 @@
                             </td>
                             <td class="px-4 py-3 text-gray-500">{{ $t->created_at->translatedFormat('d M Y, H:i') }}</td>
                             <td class="px-4 py-3">{{ $t->customer->name ?? 'Pelanggan Umum' }}</td>
-                            <td class="px-4 py-3">
-                                <span class="text-xs bg-gray-100 px-2 py-1 rounded-full uppercase">{{ $t->payment_method ?? '-' }}</span>
-                            </td>
-                            <td class="px-4 py-3 font-medium">Rp {{ number_format($t->total, 0, ',', '.') }}</td>
+                            <td class="px-4 py-3"><x-badge :status="$t->payment_status" /></td>
+                            <td class="px-4 py-3 text-right font-medium">Rp {{ number_format($t->total, 0, ',', '.') }}</td>
                         </tr>
                         @endforeach
                     </tbody>
@@ -114,6 +146,8 @@
     @push('scripts')
     <script>
     document.addEventListener('DOMContentLoaded', function () {
+        const rupiah = (v) => 'Rp ' + Number(v).toLocaleString('id-ID');
+
         new Chart(document.getElementById('trendChart'), {
             type: 'bar',
             data: {
@@ -124,20 +158,35 @@
                     borderRadius: 6,
                 }]
             },
-            options: { plugins: { legend: { display: false } } }
+            options: {
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { callbacks: { label: (ctx) => rupiah(ctx.parsed.y) } }
+                },
+                scales: { y: { beginAtZero: true } }
+            }
         });
 
-        new Chart(document.getElementById('paymentChart'), {
-            type: 'doughnut',
-            data: {
-                labels: @json($paymentDistribution->keys()),
-                datasets: [{
-                    data: @json($paymentDistribution->values()),
-                    backgroundColor: ['#2563eb', '#93c5fd', '#dbeafe', '#10b981'],
-                }]
-            },
-            options: { plugins: { legend: { display: false } }, cutout: '70%' }
-        });
+        const paymentCanvas = document.getElementById('paymentChart');
+        if (paymentCanvas) {
+            new Chart(paymentCanvas, {
+                type: 'doughnut',
+                data: {
+                    labels: @json($paymentDistribution->keys()),
+                    datasets: [{
+                        data: @json($paymentDistribution->values()),
+                        backgroundColor: ['#2563eb', '#93c5fd', '#10b981', '#f59e0b'],
+                    }]
+                },
+                options: {
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: (ctx) => ctx.label + ': ' + rupiah(ctx.parsed) } }
+                    },
+                    cutout: '70%'
+                }
+            });
+        }
     });
     </script>
     @endpush

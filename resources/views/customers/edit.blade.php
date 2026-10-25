@@ -22,6 +22,7 @@
                 <textarea name="address" rows="2" class="w-full border-gray-200 rounded-xl mt-1">{{ old('address', $customer->address) }}</textarea>
             </div>
 
+            @role('pemilik')
             <label class="flex items-center gap-2">
                 <input type="hidden" name="is_member" value="0">
                 <input type="checkbox" id="is_member_checkbox" name="is_member" value="1"
@@ -29,6 +30,7 @@
                        {{ old('is_member', $customer->is_member) ? 'checked' : '' }}>
                 <span class="text-sm">Jadikan Member</span>
             </label>
+            @endrole
 
             <div class="flex justify-end gap-3 pt-2">
                 <a href="{{ route('customers.index') }}" class="px-4 py-2.5 rounded-xl border text-sm">Batal</a>
@@ -40,6 +42,10 @@
     <script>
         function confirmMemberRemoval(form) {
             const checkbox = document.getElementById('is_member_checkbox');
+
+            // Kasir tidak punya kotak ini, jadi tidak ada yang perlu dikonfirmasi
+            if (!checkbox) return true;
+
             const wasMember = checkbox.dataset.wasMember === '1';
             const isNowMember = checkbox.checked;
 

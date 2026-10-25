@@ -1,5 +1,7 @@
-@props(['route', 'label', 'icon'])
-@php $isActive = request()->routeIs($route); @endphp
+@php
+    $patterns = (array) ($active ?? $route);
+    $isActive = request()->routeIs(...$patterns);
+@endphp
 <a href="{{ route($route) }}"
    class="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition
    {{ $isActive ? 'bg-brand-50 text-brand-700' : 'text-gray-600 hover:bg-gray-50' }}">

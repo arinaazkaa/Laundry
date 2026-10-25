@@ -5,35 +5,61 @@ namespace App\Http\Controllers;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class PaymentController extends Controller
 {
     public function store(Request $request, Transaction $transaction)
     {
         $data = $request->validate([
-            'amount' => 'required|numeric|min:0.01',
-            'method' => 'required|string',
+            'amount' => 'required|numeric|min:1',
+            'method' => 'required|in:cash,transfer,qris,ewallet',
         ]);
 
-        $transaction->payments()->create([
-            'amount' => $data['amount'],
-            'method' => $data['method'],
-            'received_by' => Auth::id(),
-        ]);
+        $result = DB::transaction(function () use ($transaction, $data) {
+            // Kunci baris transaksi supaya klik ganda tidak mencatat pembayaran dua kali
+            $trx = Transaction::lockForUpdate()->findOrFail($transaction->id);
 
-        $newPaid = $transaction->paid_amount + $data['amount'];
-        $status = $newPaid >= $transaction->total ? 'lunas' : 'dp';
+            if ($trx->status === 'dibatalkan') {
+                return ['error' => 'Transaksi sudah dibatalkan, pembayaran tidak dapat dicatat.'];
+            }
 
-        $transaction->update([
-            'paid_amount' => min($newPaid, $transaction->total),
-            'payment_status' => $status,
-            'payment_method' => $data['method'],
-        ]);
+            $remaining = max(0, (float) $trx->total - (float) $trx->paid_amount);
 
-        $change = max(0, $newPaid - $transaction->total);
+            if ($remaining <= 0) {
+                return ['error' => 'Transaksi ini sudah lunas.'];
+            }
 
-        return back()->with('success', $change > 0
-            ? "Pembayaran diterima. Kembalian: Rp " . number_format($change, 0, ',', '.')
-            : 'Pembayaran diterima.');
+            $received = (float) $data['amount'];
+            $applied = min($received, $remaining);   // hanya sebesar sisa tagihan yang dicatat sebagai pendapatan
+            $change = $received - $applied;
+
+            $trx->payments()->create([
+                'amount' => $applied,
+                'method' => $data['method'],
+                'received_by' => Auth::id(),
+            ]);
+
+            $newPaid = (float) $trx->paid_amount + $applied;
+
+            $trx->update([
+                'paid_amount' => $newPaid,
+                'payment_status' => $newPaid >= (float) $trx->total ? 'lunas' : 'dp',
+                'payment_method' => $data['method'],
+            ]);
+
+            return ['change' => $change];
+        });
+
+        if (isset($result['error'])) {
+            return back()->with('error', $result['error']);
+        }
+
+        $message = 'Pembayaran diterima.';
+        if ($result['change'] > 0) {
+            $message .= ' Kembalian: Rp ' . number_format($result['change'], 0, ',', '.');
+        }
+
+        return back()->with('success', $message);
     }
 }

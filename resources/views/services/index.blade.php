@@ -41,7 +41,9 @@
                     @endrole
                 </div>
                 <h3 class="font-semibold text-gray-900">{{ $service->name }}</h3>
+                
                 <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{{ ucfirst($service->type) }}</span>
+                <span class="text-xs text-gray-400 ml-1">· Estimasi {{ $service->duration_days ?? setting('work_duration_days', 2) }} hari</span>
 
                 <div class="mt-4 flex items-center justify-between">
                     <div>

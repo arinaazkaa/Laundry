@@ -6,6 +6,7 @@ use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class PaymentController extends Controller
 {
@@ -13,7 +14,7 @@ class PaymentController extends Controller
     {
         $data = $request->validate([
             'amount' => 'required|numeric|min:1',
-            'method' => 'required|in:cash,transfer,qris,ewallet',
+            'method' => ['required', Rule::in(array_keys(payment_methods()))],
         ]);
 
         $result = DB::transaction(function () use ($transaction, $data) {

@@ -1,5 +1,16 @@
 <x-layouts.app-layout>
     <x-slot name="header"><h1 class="text-lg font-semibold">Antar-Jemput</h1></x-slot>
+    @php $pendingRequests = \App\Models\PickupRequest::where('status', 'menunggu')->count(); @endphp
+    <a href="{{ route('pickup-requests.index') }}"
+       class="flex items-center justify-between gap-3 bg-white border rounded-2xl px-4 py-3 mb-4 hover:shadow-sm transition">
+        <span class="text-sm">
+            <span class="font-medium text-gray-800">Permintaan jemput dari pelanggan</span>
+            @if($pendingRequests > 0)
+                <span class="ml-2 text-xs bg-warning-50 text-warning-600 px-2 py-0.5 rounded-full font-medium">{{ $pendingRequests }} menunggu</span>
+            @endif
+        </span>
+        <span class="text-brand-600 text-sm">Lihat →</span>
+    </a>
 
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
         <div>

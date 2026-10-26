@@ -1,41 +1,55 @@
 export default function transactionForm(config) {
     return {
         services: config.services,
-        promos: config.promos,
+        packages: config.packages ?? [],
+        promos: config.promos ?? [],
+        stackingEnabled: !!config.stackingEnabled,
+        memberDiscountPercent: Number(config.memberDiscountPercent ?? 0),
+        pickupRequestId: config.pickupRequestId ?? null,
         tab: 'kiloan',
         cart: [],
         customerQuery: '',
         customerResults: [],
         selectedCustomer: null,
-        selectedPromoId: null,
+        selectedPromoIds: [],
+        promoResults: {},
         usePickup: false,
         useDelivery: false,
         pickupEnabled: config.pickupEnabled,
         deliveryEnabled: config.deliveryEnabled,
         paidAmount: 0,
-        paymentMethod: 'cash',
+        paymentMethod: config.defaultPaymentMethod ?? 'cash',
         subtotal: 0,
         discount: 0,
         deliveryFee: 0,
         total: 0,
         freeOngkirApplied: false,
         memberDiscountApplied: false,
-        promoUsable: null,
-        promoReason: null,
+        cartError: null,
         submitting: false,
         previewing: false,
+        previewSeq: 0,
 
         showQuickAddModal: false,
         newCustomer: { name: '', phone: '', address: '' },
         savingCustomer: false,
 
         init() {
+            // Isi awal dari "Salin ke transaksi baru" atau dari permintaan jemput pelanggan
+            if (config.prefill) {
+                this.cart = config.prefill.items ?? [];
+                this.selectedCustomer = config.prefill.customer ?? null;
+                if (config.prefill.use_pickup && this.pickupEnabled) {
+                    this.usePickup = true;
+                }
+            }
             this.recalculate();
         },
 
         addItem(service) {
             this.cart.push({
                 service_id: service.id,
+                package_id: null,
                 name: service.name,
                 type: service.type,
                 price: parseFloat(service.price),
@@ -44,39 +58,94 @@ export default function transactionForm(config) {
             this.recalculate();
         },
 
+        addPackage(pkg) {
+            const existing = this.cart.find(i => i.package_id === pkg.id);
+
+            if (existing) {
+                existing.qty = Number(existing.qty) + 1;
+            } else {
+                this.cart.push({
+                    service_id: null,
+                    package_id: pkg.id,
+                    name: 'Paket ' + pkg.name,
+                    type: 'paket',
+                    price: Number(pkg.package_price),
+                    weight_kg: pkg.weight_kg,
+                    qty: 1,
+                });
+            }
+
+            this.recalculate();
+        },
+
         removeItem(index) {
             this.cart.splice(index, 1);
             this.recalculate();
         },
 
-        get totalWeight() {
-            return this.cart
-                .filter(i => i.type === 'kiloan')
-                .reduce((sum, i) => sum + Number(i.qty || 0), 0);
+        // Jumlah paket harus bilangan bulat minimal 1
+        normalizeQty(item) {
+            if (item.type === 'paket') {
+                item.qty = Math.max(1, Math.round(Number(item.qty) || 1));
+            }
         },
 
+        // Pilih atau lepas promo. Promo yang boleh digabung bisa dipilih bersamaan (maksimal 2)
         selectPromo(promoId) {
-            this.selectedPromoId = this.selectedPromoId === promoId ? null : promoId;
+            if (this.selectedPromoIds.includes(promoId)) {
+                this.selectedPromoIds = this.selectedPromoIds.filter(id => id !== promoId);
+            } else {
+                const promo = this.promos.find(p => p.id === promoId);
+
+                if (!this.stackingEnabled || !promo?.stackable) {
+                    this.selectedPromoIds = [promoId];
+                } else {
+                    const keep = this.selectedPromoIds.filter(id => this.promos.find(p => p.id === id)?.stackable);
+                    this.selectedPromoIds = [...keep, promoId].slice(-2);
+                }
+            }
+
             this.recalculate();
         },
 
-        // Sekarang recalculate() memanggil server (preview), bukan hitung manual di JS,
-        // supaya diskon promo & member selalu akurat sesuai aturan yang sama dengan saat disimpan.
+        // Hanya promo yang benar-benar berlaku yang dikirim saat menyimpan
+        get appliedPromoIds() {
+            return this.selectedPromoIds.filter(id => this.promoResults[id]?.applied);
+        },
+
+        // Teks syarat promo, misalnya "Min. Rp 50.000 · Min. 5 kg"
+        syarat(promo) {
+            const parts = [];
+            if (Number(promo.min_transaction) > 0) {
+                parts.push('Min. Rp ' + Number(promo.min_transaction).toLocaleString('id-ID'));
+            }
+            if (Number(promo.min_weight) > 0) {
+                parts.push('Min. ' + Number(promo.min_weight) + ' kg');
+            }
+            return parts.join(' · ');
+        },
+
+        // Angka dihitung server supaya aturan promo, paket, dan member selalu sama dengan saat disimpan
         async recalculate() {
-            this.subtotal = this.cart.reduce((sum, i) => sum + (i.qty * i.price), 0);
+            this.subtotal = this.cart.reduce((sum, i) => sum + (Number(i.qty) * i.price), 0);
 
             if (this.cart.length === 0) {
+                this.previewSeq++;
                 this.discount = 0;
                 this.deliveryFee = 0;
                 this.total = 0;
                 this.freeOngkirApplied = false;
                 this.memberDiscountApplied = false;
-                this.promoUsable = null;
-                this.promoReason = null;
+                this.promoResults = {};
+                this.cartError = null;
+                this.previewing = false;
                 return;
             }
 
+            // Hanya jawaban terbaru yang dipakai kalau kasir mengetik cepat
+            const seq = ++this.previewSeq;
             this.previewing = true;
+
             try {
                 const res = await fetch('/transactions/preview', {
                     method: 'POST',
@@ -86,13 +155,19 @@ export default function transactionForm(config) {
                         'Accept': 'application/json',
                     },
                     body: JSON.stringify({
-                        items: this.cart.map(i => ({ qty: i.qty, price: i.price, type: i.type })),
-                        promo_id: this.selectedPromoId,
+                        items: this.cart.map(i => ({
+                            service_id: i.service_id,
+                            package_id: i.package_id ?? null,
+                            qty: Number(i.qty) || 0,
+                        })),
+                        promo_ids: this.selectedPromoIds,
                         use_pickup: this.usePickup,
                         use_delivery: this.useDelivery,
                         customer_id: this.selectedCustomer?.id ?? null,
                     }),
                 });
+
+                if (seq !== this.previewSeq) return;
 
                 if (res.ok) {
                     const data = await res.json();
@@ -102,13 +177,16 @@ export default function transactionForm(config) {
                     this.total = data.total;
                     this.freeOngkirApplied = data.free_ongkir_applied;
                     this.memberDiscountApplied = data.member_discount_applied;
-                    this.promoUsable = data.promo_usable;
-                    this.promoReason = data.promo_reason;
+                    this.promoResults = Object.fromEntries((data.promo_results ?? []).map(r => [r.id, r]));
+                    this.cartError = null;
+                } else if (res.status === 422) {
+                    const err = await res.json();
+                    this.cartError = Object.values(err.errors ?? {})[0]?.[0] ?? null;
                 }
             } catch (err) {
-                // Kalau preview gagal (offline dsb), biarkan angka lama tampil, submit tetap divalidasi server
+                // Kalau preview gagal (misalnya offline), angka lama tetap tampil. Server tetap menghitung ulang saat disimpan
             } finally {
-                this.previewing = false;
+                if (seq === this.previewSeq) this.previewing = false;
             }
         },
 
@@ -163,7 +241,7 @@ export default function transactionForm(config) {
         },
 
         get change() {
-            return Math.max(0, this.paidAmount - this.total);
+            return Math.max(0, (Number(this.paidAmount) || 0) - this.total);
         },
 
         async submit() {
@@ -171,22 +249,27 @@ export default function transactionForm(config) {
                 alert('Pilih minimal satu layanan.');
                 return;
             }
+
+            if (this.cart.some(i => !(Number(i.qty) > 0))) {
+                alert('Berat atau jumlah laundry wajib diisi.');
+                return;
+            }
+
             this.submitting = true;
 
             const payload = {
                 customer_id: this.selectedCustomer?.id ?? null,
                 items: this.cart.map(i => ({
                     service_id: i.service_id,
-                    name: i.name,
-                    type: i.type,
-                    price: i.price,
-                    qty: i.qty,
+                    package_id: i.package_id ?? null,
+                    qty: Number(i.qty),
                 })),
-                promo_id: this.promoUsable ? this.selectedPromoId : null,
+                promo_ids: this.appliedPromoIds,
                 use_pickup: this.usePickup,
                 use_delivery: this.useDelivery,
+                pickup_request_id: this.pickupRequestId,
                 payment_method: this.paymentMethod,
-                paid_amount: this.paidAmount,
+                paid_amount: Number(this.paidAmount) || 0,
             };
 
             try {
@@ -200,11 +283,11 @@ export default function transactionForm(config) {
                     body: JSON.stringify(payload),
                 });
 
-                // 422 = ditolak validasi server (misal promo baru saja habis kuota)
+                // 422 = ditolak validasi server (misalnya promo, paket, atau permintaan jemput sudah tidak berlaku)
                 if (res.status === 422) {
                     const err = await res.json();
-                    const message = err.errors?.promo_id?.[0] ?? err.message ?? 'Data transaksi tidak valid.';
-                    alert(message + '\n\nTotal akan dihitung ulang. Periksa lagi sebelum menyimpan.');
+                    const first = Object.values(err.errors ?? {})[0]?.[0];
+                    alert((first ?? err.message ?? 'Data transaksi tidak valid.') + '\n\nTotal akan dihitung ulang. Periksa lagi sebelum menyimpan.');
                     this.submitting = false;
                     await this.recalculate();
                     return;

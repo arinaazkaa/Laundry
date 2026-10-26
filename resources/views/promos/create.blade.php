@@ -92,6 +92,18 @@
                 <input type="number" name="quota" value="{{ old('quota') }}" min="1" class="w-full border-gray-200 rounded-xl mt-1">
             </div>
 
+            <div class="rounded-xl bg-gray-50 p-3">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="hidden" name="stackable" value="0">
+                    <input type="checkbox" name="stackable" value="1" class="mt-1 rounded border-gray-300 text-brand-600"
+                        {{ old('stackable', false) ? 'checked' : '' }}>
+                    <span>
+                        <span class="block text-sm font-medium text-gray-700">Boleh digabung dengan promo lain</span>
+                        <span class="block text-xs text-gray-400">Berlaku kalau "Promo dapat digabungkan" diaktifkan di Pengaturan. Contoh: Gratis Ongkir + Diskon Hari Raya, keduanya diberi centang ini.</span>
+                    </span>
+                </label>
+            </div>
+
             <div class="flex justify-end gap-3 pt-2">
                 <a href="{{ route('promos.index') }}" class="px-4 py-2.5 rounded-xl border text-sm">Batal</a>
                 <button class="bg-brand-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium">Simpan Promo</button>

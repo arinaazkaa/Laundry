@@ -49,6 +49,7 @@ class PromoController extends Controller
             'start_time' => 'nullable',
             'end_time' => 'nullable',
             'quota' => 'nullable|integer|min:1',
+            'stackable' => 'boolean',
         ]);
 
         Promo::create($this->normalizeValue($data));
@@ -56,11 +57,12 @@ class PromoController extends Controller
         return redirect()->route('promos.index')->with('success', 'Promo berhasil dibuat.');
     }
 
-
     public function show(Promo $promo)
     {
-        $promo->load('usages.transaction');
-        return view('promos.show', compact('promo'));
+        $usages = $promo->usages()->with('transaction.customer')->latest()->paginate(10);
+        $totalDiscount = (float) $promo->usages()->sum('discount_amount');
+
+        return view('promos.show', compact('promo', 'usages', 'totalDiscount'));
     }
 
     public function edit(Promo $promo)
@@ -80,6 +82,7 @@ class PromoController extends Controller
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
             'quota' => 'nullable|integer|min:1',
+            'stackable' => 'boolean',
         ]);
 
         $data['type'] = $promo->type;
@@ -87,6 +90,26 @@ class PromoController extends Controller
 
         return redirect()->route('promos.index')->with('success', 'Promo diperbarui.');
     }
+
+    public function toggleActive(Promo $promo)
+    {
+        $promo->update(['is_active' => ! $promo->is_active]);
+
+        return back()->with('success', 'Status promo diperbarui.');
+    }
+
+    public function destroy(Promo $promo)
+    {
+        // Promo yang sudah dipakai disimpan sebagai riwayat, tidak boleh dihapus
+        if ($promo->used_count > 0 || $promo->usages()->exists()) {
+            return back()->with('error', 'Promo yang sudah pernah dipakai tidak bisa dihapus. Nonaktifkan saja supaya riwayatnya tetap tersimpan.');
+        }
+
+        $promo->delete();
+
+        return redirect()->route('promos.index')->with('success', 'Promo dihapus.');
+    }
+
     private function normalizeValue(array $data): array
     {
         $type = $data['type'];
@@ -114,17 +137,5 @@ class PromoController extends Controller
         }
 
         return $data;
-    }
-
-    public function toggleActive(Promo $promo)
-    {
-        $promo->update(['is_active' => ! $promo->is_active]);
-        return back()->with('success', 'Status promo diperbarui.');
-    }
-
-    public function destroy(Promo $promo)
-    {
-        $promo->delete();
-        return redirect()->route('promos.index')->with('success', 'Promo dihapus.');
     }
 }

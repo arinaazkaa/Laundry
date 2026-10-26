@@ -20,6 +20,15 @@
                 <label class="text-sm font-medium text-gray-700">Harga (Rp)</label>
                 <input type="number" name="price" value="{{ old('price', $service->price) }}" required min="0" class="w-full border-gray-200 rounded-xl mt-1">
             </div>
+
+            <div>
+                <label class="text-sm font-medium text-gray-700">Estimasi Pengerjaan (hari)</label>
+                <input type="number" name="duration_days" min="1" max="60" value="{{ old('duration_days', $service->duration_days) }}"
+                    placeholder="Kosong = ikut pengaturan umum ({{ setting('work_duration_days', 2) }} hari)"
+                    class="w-full border-gray-200 rounded-xl mt-1">
+                <p class="text-xs text-gray-400 mt-1">Kalau satu transaksi berisi beberapa layanan, dipakai estimasi yang paling lama.</p>
+            </div>
+
             <div class="flex justify-end gap-3 pt-2">
                 <a href="{{ route('services.index') }}" class="px-4 py-2.5 rounded-xl border text-sm">Batal</a>
                 <button class="bg-brand-600 text-white px-5 py-2.5 rounded-xl text-sm font-medium">Simpan Perubahan</button>

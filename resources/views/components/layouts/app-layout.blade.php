@@ -9,6 +9,29 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
 </head>
 <body class="font-sans antialiased bg-gray-50">
+@php
+    $authUser = auth()->user();
+
+    // Isi navigasi bawah di HP: [route, ikon, label, pola route aktif]
+    $bottomItems = match (true) {
+        $authUser->hasRole('pemilik') => [
+            ['dashboard', 'layout-grid', 'Beranda', ['dashboard']],
+            ['transactions.index', 'file-text', 'Transaksi', ['transactions.*']],
+            ['customers.index', 'users', 'Pelanggan', ['customers.*']],
+            ['reports.index', 'bar-chart-3', 'Laporan', ['reports.*']],
+        ],
+        $authUser->hasRole('kasir') => [
+            ['transactions.create', 'plus', 'Baru', ['transactions.create']],
+            ['transactions.index', 'file-text', 'Transaksi', ['transactions.index', 'transactions.show', 'transactions.processing', 'transactions.ready', 'transactions.history']],
+            ['customers.index', 'users', 'Pelanggan', ['customers.*']],
+            ['pickups.index', 'truck', 'Antar-Jemput', ['pickups.*']],
+        ],
+        default => [
+            ['process.queue', 'clipboard-list', 'Antrian', ['process.queue']],
+        ],
+    };
+@endphp
+
 <div class="min-h-screen flex" x-data="{ mobileNavOpen: false }" @keydown.escape.window="mobileNavOpen = false">
 
     {{-- Sidebar desktop --}}
@@ -39,8 +62,10 @@
             <div class="flex-1 min-w-0 truncate">{{ $header ?? '' }}</div>
 
             <div class="flex items-center gap-3">
-                <img src="{{ auth()->user()->avatar_url }}" alt="{{ auth()->user()->name }}" class="w-8 h-8 rounded-full object-cover">
-                <span class="hidden sm:inline text-sm text-gray-600">{{ auth()->user()->name }}</span>
+                <a href="{{ route('profile.edit') }}" class="flex items-center gap-2 hover:opacity-80" title="Profil saya">
+                    <img src="{{ $authUser->avatar_url }}" alt="{{ $authUser->name }}" class="w-8 h-8 rounded-full object-cover">
+                    <span class="hidden sm:inline text-sm text-gray-600">{{ $authUser->name }}</span>
+                </a>
                 <form method="POST" action="{{ route('logout') }}">
                     @csrf
                     <button class="text-sm text-gray-400 hover:text-danger-600">Keluar</button>
@@ -48,7 +73,8 @@
             </div>
         </header>
 
-        <main class="p-4 md:p-6">
+        {{-- pb-24 di HP supaya isi halaman tidak tertutup navigasi bawah --}}
+        <main class="p-4 md:p-6 pb-24 md:pb-6">
             @if (session('success'))
                 <div class="mb-4 bg-success-50 text-success-600 px-4 py-3 rounded-xl text-sm">
                     {{ session('success') }}
@@ -63,6 +89,25 @@
             {{ $slot }}
         </main>
     </div>
+
+    {{-- Navigasi bawah (khusus HP) --}}
+    <nav class="md:hidden fixed inset-x-0 bottom-0 z-40 h-16 bg-white border-t flex">
+        @foreach($bottomItems as [$route, $icon, $label, $active])
+            @php $isActive = request()->routeIs(...$active); @endphp
+            <a href="{{ route($route) }}"
+               class="flex-1 flex flex-col items-center justify-center gap-0.5 text-[11px]
+               {{ $isActive ? 'text-brand-600 font-semibold' : 'text-gray-500' }}">
+                <x-dynamic-component :component="'lucide-' . $icon" class="w-5 h-5" />
+                {{ $label }}
+            </a>
+        @endforeach
+
+        <button type="button" @click="mobileNavOpen = true"
+                class="flex-1 flex flex-col items-center justify-center gap-0.5 text-[11px] text-gray-500">
+            <x-lucide-menu class="w-5 h-5" />
+            Menu
+        </button>
+    </nav>
 </div>
 
 @stack('scripts')

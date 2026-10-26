@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ServicePackageController;
 use App\Http\Controllers\CustomerController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ExpenseController;
@@ -16,6 +17,11 @@ use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\UserController;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Controllers\CustomerAccessController;
+use App\Http\Controllers\Portal\AuthController as PortalAuthController;
+use App\Http\Controllers\Portal\PortalController;
+use App\Http\Controllers\PickupRequestController;
+use App\Http\Controllers\Portal\PickupRequestController as PortalPickupController;
 
 /*
 |--------------------------------------------------------------------------
@@ -24,7 +30,13 @@ use Illuminate\Support\Facades\Auth;
 */
 
 Route::get('/', function () {
-    return Auth::check() ? redirect()->route('dashboard') : redirect()->route('login');
+    if (Auth::guard('web')->check()) {
+        return redirect()->route('dashboard');
+    }
+
+    return Auth::guard('customer')->check()
+        ? redirect()->route('portal.home')
+        : redirect()->route('login');
 });
 
 // Tracking pelanggan via QR Code. Tanpa login, dibatasi laju akses supaya token tidak bisa ditebak massal
@@ -45,7 +57,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    // Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 
     /*
     |----------------------------------------------------------------------
@@ -70,6 +82,7 @@ Route::middleware('auth')->group(function () {
         Route::post('/transactions', [TransactionController::class, 'store'])->name('transactions.store');
         Route::post('/transactions/preview', [TransactionController::class, 'preview'])->name('transactions.preview');
         Route::get('/transactions/{transaction}', [TransactionController::class, 'show'])->name('transactions.show');
+        Route::patch('/transactions/{transaction}/info', [TransactionController::class, 'updateInfo'])->name('transactions.updateInfo');
         Route::get('/transactions/{transaction}/nota', [TransactionController::class, 'printNota'])->name('transactions.nota');
         Route::get('/transactions/{transaction}/nota/download', [TransactionController::class, 'downloadNota'])->name('transactions.nota.download');
 
@@ -88,6 +101,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/customers/{customer}', [CustomerController::class, 'show'])->name('customers.show');
         Route::get('/customers/{customer}/edit', [CustomerController::class, 'edit'])->name('customers.edit');
         Route::put('/customers/{customer}', [CustomerController::class, 'update'])->name('customers.update');
+        Route::post('/customers/{customer}/access-code', [CustomerAccessController::class, 'store'])->name('customers.accessCode');
 
         // Layanan (kasir hanya melihat)
         Route::get('/services', [ServiceController::class, 'index'])->name('services.index');
@@ -98,6 +112,11 @@ Route::middleware('auth')->group(function () {
         Route::get('/pickups/delivery', [PickupDeliveryController::class, 'deliveryOnly'])->name('pickups.delivery');
         Route::get('/pickups/{pickup}', [PickupDeliveryController::class, 'show'])->name('pickups.show');
         Route::patch('/pickups/{pickup}/status', [PickupDeliveryController::class, 'updateStatus'])->name('pickups.updateStatus');
+
+        // Permintaan jemput dari pelanggan
+        Route::get('/permintaan-jemput', [PickupRequestController::class, 'index'])->name('pickup-requests.index');
+        Route::patch('/permintaan-jemput/{pickupRequest}/konfirmasi', [PickupRequestController::class, 'confirm'])->name('pickup-requests.confirm');
+        Route::patch('/permintaan-jemput/{pickupRequest}/tolak', [PickupRequestController::class, 'reject'])->name('pickup-requests.reject');
     });
 
     /*
@@ -113,6 +132,7 @@ Route::middleware('auth')->group(function () {
         // Pelanggan
         Route::delete('/customers/{customer}', [CustomerController::class, 'destroy'])->name('customers.destroy');
         Route::patch('/customers/{customer}/promote-member', [CustomerController::class, 'promoteMember'])->name('customers.promoteMember');
+        Route::delete('/customers/{customer}/access', [CustomerAccessController::class, 'destroy'])->name('customers.revokeAccess');
 
         // Layanan
         Route::get('/services/create', [ServiceController::class, 'create'])->name('services.create');
@@ -128,10 +148,20 @@ Route::middleware('auth')->group(function () {
         Route::get('/promos/history', [PromoController::class, 'history'])->name('promos.history');
         Route::get('/promos/create', [PromoController::class, 'create'])->name('promos.create');
         Route::post('/promos', [PromoController::class, 'store'])->name('promos.store');
+        Route::get('/promos/{promo}', [PromoController::class, 'show'])->name('promos.show');
         Route::get('/promos/{promo}/edit', [PromoController::class, 'edit'])->name('promos.edit');
         Route::put('/promos/{promo}', [PromoController::class, 'update'])->name('promos.update');
         Route::patch('/promos/{promo}/toggle', [PromoController::class, 'toggleActive'])->name('promos.toggle');
         Route::delete('/promos/{promo}', [PromoController::class, 'destroy'])->name('promos.destroy');
+
+        // Paket Laundry
+        Route::get('/packages', [ServicePackageController::class, 'index'])->name('packages.index');
+        Route::get('/packages/create', [ServicePackageController::class, 'create'])->name('packages.create');
+        Route::post('/packages', [ServicePackageController::class, 'store'])->name('packages.store');
+        Route::get('/packages/{package}/edit', [ServicePackageController::class, 'edit'])->name('packages.edit');
+        Route::put('/packages/{package}', [ServicePackageController::class, 'update'])->name('packages.update');
+        Route::patch('/packages/{package}/toggle', [ServicePackageController::class, 'toggleActive'])->name('packages.toggle');
+        Route::delete('/packages/{package}', [ServicePackageController::class, 'destroy'])->name('packages.destroy');
 
         // Pengeluaran
         Route::get('/expenses', [ExpenseController::class, 'index'])->name('expenses.index');
@@ -164,6 +194,35 @@ Route::middleware('auth')->group(function () {
         // Pengaturan
         Route::get('/settings', [SettingController::class, 'index'])->name('settings.index');
         Route::put('/settings', [SettingController::class, 'update'])->name('settings.update');
+    });
+});
+
+/*
+|--------------------------------------------------------------------------
+| Portal pelanggan (akun terpisah dari akun staf)
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('akun')->name('portal.')->group(function () {
+
+    Route::middleware('guest:customer')->group(function () {
+        Route::get('/masuk', [PortalAuthController::class, 'showLogin'])->name('login');
+        Route::post('/masuk', [PortalAuthController::class, 'login'])->middleware('throttle:20,1');
+
+        Route::get('/aktivasi', [PortalAuthController::class, 'showActivate'])->name('activate');
+        Route::post('/aktivasi', [PortalAuthController::class, 'activate'])->middleware('throttle:20,1')->name('activate.store');
+    });
+
+    Route::middleware('auth:customer')->group(function () {
+        Route::get('/', [PortalController::class, 'home'])->name('home');
+        Route::get('/transaksi', [PortalController::class, 'transactions'])->name('transactions');
+        Route::get('/transaksi/{token}', [PortalController::class, 'show'])->name('transactions.show');
+        Route::get('/profil', [PortalController::class, 'account'])->name('account');
+        Route::get('/jemput', [PortalPickupController::class, 'index'])->name('pickup');
+        Route::post('/jemput', [PortalPickupController::class, 'store'])->middleware('throttle:10,1')->name('pickup.store');
+        Route::delete('/jemput/{id}', [PortalPickupController::class, 'cancel'])->whereNumber('id')->name('pickup.cancel');
+        Route::put('/profil/sandi', [PortalController::class, 'updatePassword'])->name('password');
+        Route::post('/keluar', [PortalAuthController::class, 'logout'])->name('logout');
     });
 });
 

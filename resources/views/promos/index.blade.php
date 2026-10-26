@@ -54,7 +54,11 @@
                     </span>
                 </div>
 
-                <h3 class="font-semibold text-lg text-gray-900">{{ $promo->name }}</h3>
+                <a href="{{ route('promos.show', $promo) }}" class="block font-semibold text-lg text-gray-900 hover:text-brand-600">{{ $promo->name }}</a>
+             
+                @if($promo->stackable)
+                    <p class="text-xs text-gray-400 mt-0.5">Bisa digabung dengan promo lain</p>
+                @endif
 
                 @if($promo->type === 'gratis_ongkir')
                     <p class="text-sm text-gray-500 mt-1">{{ $promo->description ?: 'Ongkir jemput/antar gratis' }}</p>
@@ -92,7 +96,8 @@
 
                 <div class="flex gap-2 mt-4 pt-4 border-t">
                     <a href="{{ route('promos.edit', $promo) }}" class="flex-1 text-center border rounded-xl py-2 text-xs">Edit</a>
-                    <form method="POST" action="{{ route('promos.toggle', $promo) }}" class="flex-1">
+                    <form method="POST" action="{{ route('promos.toggle', $promo) }}" class="flex-1"
+                        @if($promo->is_active) onsubmit="return confirm('Nonaktifkan promo ini? Promo tidak akan muncul di kasir.')" @endif>
                         @csrf @method('PATCH')
                         <button class="w-full border rounded-xl py-2 text-xs {{ $promo->is_active ? 'text-warning-600' : 'text-success-600' }}">
                             {{ $promo->is_active ? 'Nonaktifkan' : 'Aktifkan' }}

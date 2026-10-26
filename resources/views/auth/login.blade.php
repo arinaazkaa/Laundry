@@ -20,7 +20,11 @@
 
         <div class="relative z-10 flex flex-col items-center justify-center w-full text-center px-12">
             <div class="w-16 h-16 rounded-2xl bg-white/15 backdrop-blur flex items-center justify-center mb-5 border border-white/20">
-                <span class="text-3xl">🧺</span>
+                @if($logoUrl = business_logo_url())
+                    <img src="{{ $logoUrl }}" alt="Logo" class="w-10 h-10 object-contain">
+                @else
+                    <span class="text-3xl">🧺</span>
+                @endif
             </div>
             <h1 class="text-3xl font-bold text-white mb-3">{{ setting('business_name', 'Laundry Desa') }}</h1>
             <p class="text-brand-100 max-w-sm">
@@ -109,6 +113,10 @@
                 <p class="text-center text-sm text-gray-500">
                     Belum punya akun?
                     <span class="text-brand-600 font-semibold">Hubungi Pemilik untuk akses</span>
+                    <p class="text-center text-sm text-gray-500">
+                        Pelanggan?
+                        <a href="{{ route('portal.login') }}" class="text-brand-600 font-semibold">Masuk ke akun pelanggan</a>
+                    </p>
                 </p>
             </form>
         </div>

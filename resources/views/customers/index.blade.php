@@ -1,7 +1,5 @@
 <x-layouts.app-layout>
-    <x-slot name="header">
-        <h1 class="text-lg font-semibold">Pelanggan</h1>
-    </x-slot>
+    <x-slot name="header"><h1 class="text-lg font-semibold">Pelanggan</h1></x-slot>
 
     <div class="flex items-center justify-between mb-6">
         <div>
@@ -14,15 +12,45 @@
         </a>
     </div>
 
-    <form method="GET" class="mb-4">
-        <input type="text" name="q" value="{{ request('q') }}" placeholder="Cari data pelanggan..."
-               class="w-full md:w-96 border-gray-200 rounded-xl"
-               onchange="this.form.submit()">
-    </form>
+    @php
+        $tabs = ['semua' => 'Semua', 'member' => 'Member', 'rekomendasi' => 'Layak Jadi Member', 'aktif' => 'Paling Aktif'];
+    @endphp
+
+    <div class="flex flex-wrap items-center gap-3 mb-4">
+        <div class="flex flex-wrap bg-white border rounded-xl p-1 text-sm w-fit">
+            @foreach($tabs as $key => $label)
+                <a href="{{ route('customers.index', array_filter(['filter' => $key === 'semua' ? null : $key, 'q' => request('q')])) }}"
+                   class="px-4 py-1.5 rounded-lg {{ $filter === $key ? 'bg-brand-600 text-white' : '' }}">{{ $label }}</a>
+            @endforeach
+        </div>
+
+        <form method="GET" class="flex-1 min-w-[200px] md:max-w-sm">
+            @if($filter !== 'semua')
+                <input type="hidden" name="filter" value="{{ $filter }}">
+            @endif
+            <input type="text" name="q" value="{{ request('q') }}" placeholder="Cari nama atau nomor HP..."
+                   class="w-full border-gray-200 rounded-xl" onchange="this.form.submit()">
+        </form>
+    </div>
+
+    @if($filter === 'aktif')
+        <p class="text-sm text-gray-500 mb-3">Diurutkan dari pelanggan dengan transaksi paling banyak (tidak termasuk yang dibatalkan).</p>
+    @elseif($filter === 'rekomendasi')
+        <p class="text-sm text-gray-500 mb-3">
+            Pelanggan yang sudah memenuhi kriteria member
+            ({{ setting('member_min_transactions', 5) }}x transaksi atau belanja Rp {{ number_format((float) setting('member_min_spent', 200000), 0, ',', '.') }}) tapi belum dijadikan member.
+        </p>
+    @endif
 
     <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
         @if($customers->isEmpty())
-            <x-empty-state title="Belum ada pelanggan" description="Tambahkan pelanggan pertama untuk mulai bertransaksi." />
+            <x-empty-state
+                :title="match($filter) {
+                    'member' => 'Belum ada member',
+                    'rekomendasi' => 'Belum ada pelanggan yang layak jadi member',
+                    default => 'Belum ada pelanggan',
+                }"
+                description="Pelanggan baru bisa ditambahkan langsung dari halaman Transaksi Baru." />
         @else
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
@@ -33,7 +61,7 @@
                             <th class="px-4 py-3 font-medium">No. HP</th>
                             <th class="px-4 py-3 font-medium">Alamat</th>
                             <th class="px-4 py-3 font-medium">Status</th>
-                            <th class="px-4 py-3 font-medium">Total Transaksi</th>
+                            <th class="px-4 py-3 font-medium">Total Belanja</th>
                             <th class="px-4 py-3 font-medium">Aksi</th>
                         </tr>
                     </thead>
@@ -65,12 +93,15 @@
                                 @endif
                             </td>
 
-                            <td class="px-4 py-3 font-medium">Rp {{ number_format($customer->total_spent, 0, ',', '.') }}</td>
+                            <td class="px-4 py-3">
+                                <p class="font-medium">Rp {{ number_format($customer->total_spent, 0, ',', '.') }}</p>
+                                <p class="text-xs text-gray-400">{{ $customer->total_transactions }} transaksi</p>
+                            </td>
 
                             <td class="px-4 py-3">
                                 <div class="flex gap-2 items-center">
-                                    @if(!$customer->is_member)
-                                        @role('pemilik')
+                                    @role('pemilik')
+                                        @if(! $customer->is_member)
                                         <form method="POST" action="{{ route('customers.promoteMember', $customer) }}"
                                               onsubmit="return confirm('Jadikan {{ $customer->name }} sebagai member?')">
                                             @csrf @method('PATCH')
@@ -78,14 +109,16 @@
                                                 Jadikan Member
                                             </button>
                                         </form>
-                                        @endrole
-                                    @endif
+                                        @endif
+                                    @endrole
                                     <a href="{{ route('customers.edit', $customer) }}" class="text-brand-600 text-xs">Edit</a>
+                                    @role('pemilik')
                                     <form method="POST" action="{{ route('customers.destroy', $customer) }}"
                                           onsubmit="return confirm('Hapus pelanggan ini?')">
                                         @csrf @method('DELETE')
                                         <button class="text-danger-600 text-xs">Hapus</button>
                                     </form>
+                                    @endrole
                                 </div>
                             </td>
                         </tr>

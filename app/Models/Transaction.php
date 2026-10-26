@@ -79,6 +79,10 @@ class Transaction extends Model
     {
         return $this->hasMany(PickupDelivery::class);
     }
+    public function promoUsages()
+    {
+        return $this->hasMany(PromoUsage::class);
+    }
 
     public function getRemainingAttribute(): float
     {

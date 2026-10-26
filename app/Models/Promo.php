@@ -12,13 +12,14 @@ class Promo extends Model
     protected $fillable = [
         'name', 'description', 'type', 'value', 'value_type', 'min_transaction',
         'min_weight', 'start_date', 'end_date', 'start_time', 'end_time',
-        'quota', 'used_count', 'is_active',
+        'quota', 'used_count', 'is_active', 'stackable',
     ];
 
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
         'is_active' => 'boolean',
+        'stackable' => 'boolean',
     ];
 
     public function usages()

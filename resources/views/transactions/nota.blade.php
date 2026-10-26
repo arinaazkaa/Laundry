@@ -54,6 +54,9 @@
 </head>
 <body>
     <div class="center">
+        @if($logoData = business_logo_data_uri())  
+            <img src="{{ $logoData }}" style="height: 36px; margin-bottom: 4px;"><br>
+        @endif
         <div class="bold" style="font-size: 15px;">{{ setting('business_name', 'Laundry Desa') }}</div>
         <div class="muted">{{ setting('business_address', '') }}</div>
         <div class="muted">{{ setting('business_whatsapp', '') }}</div>
@@ -169,6 +172,13 @@
         Terima kasih telah menggunakan jasa kami.<br>
         Simpan nota ini sebagai bukti transaksi.
     </div>
+    
+    @if(setting('payment_info'))
+        <div class="muted" style="margin-top: 6px;">{!! nl2br(e(setting('payment_info'))) !!}</div>
+    @endif
+    @if($hours = operating_hours_text())
+        <div class="muted" style="margin-top: 4px;">Jam buka: {{ $hours }}</div>
+    @endif
 
     @if(isset($qrCodeSvg))
     <div class="center" style="margin-top: 10px;">

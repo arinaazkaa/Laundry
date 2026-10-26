@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 class TransactionItem extends Model
 {
     protected $fillable = [
-        'transaction_id', 'service_id', 'service_name',
+        'transaction_id', 'service_id', 'package_id', 'service_name',
         'unit_type', 'qty', 'price_per_unit', 'subtotal',
     ];
 
@@ -19,5 +19,10 @@ class TransactionItem extends Model
     public function service()
     {
         return $this->belongsTo(Service::class);
+    }
+
+    public function package()
+    {
+        return $this->belongsTo(ServicePackage::class, 'package_id');
     }
 }

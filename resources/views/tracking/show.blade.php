@@ -10,8 +10,10 @@
 <body class="bg-gray-50 min-h-screen">
     <div class="max-w-md mx-auto px-4 py-8">
         <div class="text-center mb-6">
-            <h1 class="text-xl font-bold text-brand-600">{{ setting('business_name', 'Laundry Desa') }}</h1>
-            <p class="text-sm text-gray-400">Lacak status laundry kamu</p>
+            @if($logoUrl = business_logo_url())
+                <img src="{{ $logoUrl }}" alt="Logo" class="h-12 w-auto mx-auto mb-2 object-contain">
+            @endif
+            <h1 class="text-xl font-bold text-brand-600">{{ setting('business_name', 'Laundry Desa') }}</h1>            <p class="text-sm text-gray-400">Lacak status laundry kamu</p>
         </div>
 
         <div class="bg-white rounded-2xl border border-gray-100 p-5 mb-4">
@@ -27,7 +29,7 @@
 
         {{-- Progress Tracker (reuse komponen yang sudah ada) --}}
         <div class="bg-white rounded-2xl border border-gray-100 p-5 mb-4">
-            <x-progress-tracker :status="$status" />
+            <x-progress-tracker :status="$status" :vertical="true" />
         </div>
 
         {{-- Item Laundry --}}
@@ -77,6 +79,12 @@
         <p class="text-center text-xs text-gray-400 mt-6">
             Diterima: {{ $createdAt->translatedFormat('d M Y, H:i') }} WIB
         </p>
+        <p class="text-center text-xs text-gray-400 mt-3">
+            Punya akun pelanggan? <a href="{{ route('portal.login') }}" class="text-brand-600">Masuk</a>
+        </p>
+        @if($hours = operating_hours_text())
+            <p class="text-center text-xs text-gray-400 mt-1">Jam buka: {{ $hours }}</p>
+        @endif
     </div>
 </body>
 </html>

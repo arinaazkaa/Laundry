@@ -12,8 +12,8 @@
         </a>
     </div>
 
-    {{-- Filter cepat sesuai submenu sidebar --}}
-    <div class="flex bg-white border rounded-xl p-1 text-sm w-fit mb-4">
+    {{-- Tab status --}}
+    <div class="flex flex-wrap bg-white border rounded-xl p-1 text-sm w-fit mb-4">
         <a href="{{ route('transactions.index') }}"
            class="px-4 py-1.5 rounded-lg {{ request()->routeIs('transactions.index') ? 'bg-brand-600 text-white' : '' }}">Semua</a>
         <a href="{{ route('transactions.processing') }}"
@@ -24,18 +24,57 @@
            class="px-4 py-1.5 rounded-lg {{ request()->routeIs('transactions.history') ? 'bg-brand-600 text-white' : '' }}">Riwayat</a>
     </div>
 
-    <form method="GET" class="flex gap-3 mb-4">
-        <input type="text" name="q" value="{{ request('q') }}"
-               placeholder="Cari kode transaksi, nama, atau No. HP..."
-               class="flex-1 border-gray-200 rounded-xl"
-               onchange="this.form.submit()">
+    {{-- Pencarian dan filter --}}
+    @php $hasFilter = request()->filled('q') || request()->filled('date_from') || request()->filled('date_to') || request()->filled('payment'); @endphp
+    <form method="GET" action="{{ url()->current() }}" class="bg-white rounded-2xl border border-gray-100 p-4 mb-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <input type="text" name="q" value="{{ request('q') }}" placeholder="Kode, nama, atau No. HP..."
+                   class="md:col-span-2 border-gray-200 rounded-xl text-sm">
+            <input type="date" name="date_from" value="{{ request('date_from') }}" title="Dari tanggal" class="border-gray-200 rounded-xl text-sm">
+            <input type="date" name="date_to" value="{{ request('date_to') }}" title="Sampai tanggal" class="border-gray-200 rounded-xl text-sm">
+            <select name="payment" class="border-gray-200 rounded-xl text-sm">
+                <option value="">Semua metode bayar</option>
+                @foreach(payment_method_labels() as $key => $label)
+                    <option value="{{ $key }}" {{ request('payment') === $key ? 'selected' : '' }}>{{ $label }}</option>
+                @endforeach
+            </select>
+        </div>
+        <div class="flex items-center gap-3 mt-3">
+            <button class="bg-brand-600 text-white px-4 py-2 rounded-xl text-sm font-medium">Cari</button>
+            @if($hasFilter)
+                <a href="{{ url()->current() }}" class="text-sm text-gray-500">Hapus filter</a>
+            @endif
+        </div>
     </form>
 
     <div class="bg-white rounded-2xl border border-gray-100 overflow-hidden">
         @if($transactions->isEmpty())
-            <x-empty-state title="Belum ada transaksi" description="Transaksi yang kamu buat akan muncul di sini." />
+            <x-empty-state :title="$hasFilter ? 'Tidak ada transaksi yang cocok' : 'Belum ada transaksi'"
+                           :description="$hasFilter ? 'Coba ubah atau hapus filter.' : 'Transaksi yang kamu buat akan muncul di sini.'" />
         @else
-            <div class="overflow-x-auto">
+            {{-- Kartu untuk HP --}}
+            <div class="md:hidden divide-y">
+                @foreach($transactions as $t)
+                    <a href="{{ route('transactions.show', $t) }}" class="block p-4 hover:bg-gray-50">
+                        <div class="flex items-start justify-between gap-2">
+                            <span class="font-semibold text-brand-600">{{ $t->code }}</span>
+                            <x-badge :status="$t->status" />
+                        </div>
+                        <p class="text-sm mt-1 flex items-center gap-1.5">
+                            @if($t->customer?->is_member)<span class="text-amber-600">⭐</span>@endif
+                            {{ $t->customer->name ?? 'Pelanggan Umum' }}
+                        </p>
+                        <div class="flex items-center justify-between mt-2">
+                            <span class="text-xs text-gray-400">{{ $t->created_at->translatedFormat('d M Y, H:i') }}</span>
+                            <span class="font-semibold">Rp {{ number_format($t->total, 0, ',', '.') }}</span>
+                        </div>
+                        <div class="mt-1.5"><x-badge :status="$t->payment_status" /></div>
+                    </a>
+                @endforeach
+            </div>
+
+            {{-- Tabel untuk layar lebar --}}
+            <div class="hidden md:block overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="bg-gray-50 text-gray-500 text-left">
                         <tr>
@@ -79,6 +118,7 @@
                     </tbody>
                 </table>
             </div>
+
             <div class="p-4">
                 <x-pagination :paginator="$transactions" />
             </div>

@@ -20,13 +20,7 @@ class ServiceController extends Controller
 
     public function store(Request $request)
     {
-        $data = $request->validate([
-            'name' => 'required|string|max:255',
-            'type' => 'required|in:kiloan,satuan',
-            'price' => 'required|numeric|min:0',
-        ]);
-
-        Service::create($data);
+        Service::create($this->validated($request));
 
         return redirect()->route('services.index')->with('success', 'Layanan ditambahkan.');
     }
@@ -38,13 +32,7 @@ class ServiceController extends Controller
 
     public function update(Request $request, Service $service)
     {
-        $data = $request->validate([
-            'name' => 'required|string|max:255',
-            'type' => 'required|in:kiloan,satuan',
-            'price' => 'required|numeric|min:0',
-        ]);
-
-        $service->update($data);
+        $service->update($this->validated($request));
 
         return redirect()->route('services.index')->with('success', 'Layanan diperbarui.');
     }
@@ -52,12 +40,24 @@ class ServiceController extends Controller
     public function toggleActive(Service $service)
     {
         $service->update(['is_active' => ! $service->is_active]);
+
         return back()->with('success', 'Status layanan diperbarui.');
     }
 
     public function destroy(Service $service)
     {
         $service->delete();
+
         return redirect()->route('services.index')->with('success', 'Layanan dihapus.');
+    }
+
+    private function validated(Request $request): array
+    {
+        return $request->validate([
+            'name' => 'required|string|max:255',
+            'type' => 'required|in:kiloan,satuan',
+            'price' => 'required|numeric|min:0',
+            'duration_days' => 'nullable|integer|min:1|max:60',
+        ]);
     }
 }

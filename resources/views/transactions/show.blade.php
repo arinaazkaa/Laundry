@@ -11,11 +11,13 @@
                class="border rounded-xl px-4 py-2 text-sm">🖨️ Cetak Nota</a>
             <a href="{{ route('transactions.nota.download', $transaction) }}"
                class="border rounded-xl px-4 py-2 text-sm">⬇ Download PDF</a>
+            <a href="{{ route('transactions.create', ['from' => $transaction->id]) }}"
+               class="border rounded-xl px-4 py-2 text-sm" title="Buat transaksi baru dengan isi yang sama">⧉ Salin ke Transaksi Baru</a>
 
             @role('pemilik')
                 @if(!in_array($transaction->status, ['selesai', 'dibatalkan']))
                 <form method="POST" action="{{ route('transactions.cancel', $transaction) }}"
-                      onsubmit="return confirm('Batalkan transaksi ini? Tugas antar-jemput yang belum selesai ikut dibatalkan dan kuota promo dikembalikan.')">
+                      onsubmit="return confirm('Batalkan transaksi ini? Tugas antar-jemput yang belum selesai ikut dibatalkan dan kuota promo serta paket dikembalikan.')">
                     @csrf @method('PATCH')
                     <button class="border border-danger-200 text-danger-600 rounded-xl px-4 py-2 text-sm">Batalkan</button>
                 </form>
@@ -50,8 +52,26 @@
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {{-- Kiri --}}
         <div class="lg:col-span-2 space-y-6">
-            <div class="bg-white rounded-2xl border border-gray-100 p-5">
-                <h3 class="font-semibold mb-3">Informasi Pelanggan</h3>
+            <div class="bg-white rounded-2xl border border-gray-100 p-5"
+                 x-data='{
+                     open: false,
+                     query: "",
+                     results: [],
+                     customerId: @js($transaction->customer_id),
+                     customerName: @js($transaction->customer?->name ?? "Pelanggan Umum"),
+                     async search() {
+                         if (!this.query) { this.results = []; return; }
+                         const res = await fetch("/customers/search?q=" + encodeURIComponent(this.query));
+                         this.results = await res.json();
+                     }
+                 }'>
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="font-semibold">Informasi Pelanggan</h3>
+                    @if($transaction->status !== 'dibatalkan')
+                        <button type="button" @click="open = !open" class="text-xs text-brand-600">Ubah pelanggan / catatan</button>
+                    @endif
+                </div>
+
                 @if($transaction->customer)
                     <div class="flex items-center gap-3">
                         <span class="w-10 h-10 rounded-full flex items-center justify-center font-semibold
@@ -70,6 +90,52 @@
                     </div>
                 @else
                     <p class="text-gray-500 text-sm">Pelanggan Umum (tanpa data terdaftar)</p>
+                @endif
+
+                @if($transaction->notes)
+                    <p class="text-sm text-gray-500 mt-3 whitespace-pre-line"><span class="text-gray-400">Catatan:</span> {{ $transaction->notes }}</p>
+                @endif
+
+                @if($transaction->status !== 'dibatalkan')
+                <form method="POST" action="{{ route('transactions.updateInfo', $transaction) }}" x-show="open" x-cloak
+                      class="mt-4 pt-4 border-t space-y-3">
+                    @csrf @method('PATCH')
+                    <input type="hidden" name="customer_id" :value="customerId ?? ''">
+
+                    <div class="relative">
+                        <label class="text-sm font-medium text-gray-700">Pelanggan</label>
+                        <div class="flex gap-2 mt-1">
+                            <input type="text" x-model="query" @input.debounce.400ms="search()" placeholder="Cari nama atau No. HP..."
+                                   class="flex-1 border-gray-200 rounded-xl text-sm">
+                            <button type="button" @click="customerId = null; customerName = 'Pelanggan Umum'; results = []"
+                                    class="border rounded-xl px-3 text-xs">Pelanggan Umum</button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">Dipilih: <span class="font-medium" x-text="customerName"></span></p>
+
+                        <div x-show="results.length" x-cloak
+                             class="absolute z-10 left-0 right-0 bg-white border rounded-xl shadow-lg mt-1 max-h-56 overflow-y-auto">
+                            <template x-for="c in results" :key="c.id">
+                                <button type="button" @click="customerId = c.id; customerName = c.name; results = []; query = ''"
+                                        class="w-full text-left px-4 py-2 hover:bg-gray-50 border-b last:border-0 text-sm">
+                                    <span x-text="c.name"></span>
+                                    <span class="text-xs text-gray-400" x-text="c.phone"></span>
+                                </button>
+                            </template>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="text-sm font-medium text-gray-700">Catatan</label>
+                        <textarea name="notes" rows="2" class="w-full border-gray-200 rounded-xl mt-1 text-sm">{{ old('notes', $transaction->notes) }}</textarea>
+                    </div>
+
+                    <p class="text-xs text-gray-400">Mengubah pelanggan tidak menghitung ulang diskon dan total. Kalau angkanya yang salah, pakai "Salin ke Transaksi Baru" lalu batalkan transaksi ini.</p>
+
+                    <div class="flex gap-2 justify-end">
+                        <button type="button" @click="open = false" class="border rounded-xl px-4 py-2 text-sm">Batal</button>
+                        <button class="bg-brand-600 text-white rounded-xl px-4 py-2 text-sm font-medium">Simpan</button>
+                    </div>
+                </form>
                 @endif
             </div>
 
@@ -108,9 +174,14 @@
                 <div class="space-y-1.5 text-sm">
                     <div class="flex justify-between"><span class="text-gray-500">Subtotal</span><span>Rp {{ number_format($transaction->subtotal, 0, ',', '.') }}</span></div>
                     <div class="flex justify-between text-danger-600">
-                        <span>Diskon @if($transaction->promo)<span class="text-xs">({{ $transaction->promo->name }})</span>@endif</span>
+                        <span>Diskon</span>
                         <span>- Rp {{ number_format($transaction->discount, 0, ',', '.') }}</span>
                     </div>
+                    @if($transaction->promoUsages->isNotEmpty())
+                        <p class="text-xs text-gray-400">Promo: {{ $transaction->promoUsages->map(fn ($u) => $u->promo->name ?? '-')->join(', ') }}</p>
+                    @elseif($transaction->discount > 0)
+                        <p class="text-xs text-gray-400">Diskon member</p>
+                    @endif
                     <div class="flex justify-between"><span class="text-gray-500">Ongkir</span><span>Rp {{ number_format($transaction->delivery_fee, 0, ',', '.') }}</span></div>
                     <div class="flex justify-between font-bold text-base pt-2 border-t">
                         <span>Total</span><span class="text-brand-600">Rp {{ number_format($transaction->total, 0, ',', '.') }}</span>
@@ -131,10 +202,9 @@
                            class="w-full border-gray-200 rounded-xl text-sm">
                     @error('amount') <p class="text-xs text-danger-600">{{ $message }}</p> @enderror
                     <select name="method" class="w-full border-gray-200 rounded-xl text-sm">
-                        <option value="cash">Cash</option>
-                        <option value="transfer">Transfer</option>
-                        <option value="qris">QRIS</option>
-                        <option value="ewallet">E-Wallet</option>
+                        @foreach(payment_methods() as $key => $label)
+                            <option value="{{ $key }}">{{ $label }}</option>
+                        @endforeach
                     </select>
                     <button class="w-full bg-brand-600 text-white rounded-xl py-2.5 text-sm font-medium">Catat Pembayaran</button>
                     <p class="text-xs text-gray-400">Kalau uang yang diterima lebih besar dari sisa tagihan, selisihnya ditampilkan sebagai kembalian.</p>

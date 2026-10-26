@@ -1,4 +1,7 @@
 <div class="p-5">
+    @if($logoUrl = business_logo_url())
+        <img src="{{ $logoUrl }}" alt="Logo {{ setting('business_name', 'Laundry Desa') }}" class="h-10 w-auto max-w-[8rem] object-contain mb-2">
+    @endif
     <h1 class="text-xl font-bold text-brand-600">{{ setting('business_name', 'Laundry Desa') }}</h1>
     <p class="text-xs text-gray-400">Sistem Manajemen Laundry</p>
 </div>
@@ -19,7 +22,8 @@
         @include('layouts.partials.nav-item', ['route' => 'transactions.index', 'icon' => 'file-text', 'label' => 'Transaksi', 'active' => ['transactions.index', 'transactions.show', 'transactions.processing', 'transactions.ready', 'transactions.history']])
         @include('layouts.partials.nav-item', ['route' => 'customers.index', 'icon' => 'users', 'label' => 'Pelanggan', 'active' => 'customers.*'])
         @include('layouts.partials.nav-item', ['route' => 'services.index', 'icon' => 'shirt', 'label' => 'Layanan', 'active' => 'services.*'])
-        @include('layouts.partials.nav-item', ['route' => 'pickups.index', 'icon' => 'truck', 'label' => 'Antar-Jemput', 'active' => 'pickups.*'])
+        @php $pendingPickupRequests = \App\Models\PickupRequest::where('status', 'menunggu')->count(); @endphp
+        @include('layouts.partials.nav-item', ['route' => 'pickups.index', 'icon' => 'truck', 'label' => 'Antar-Jemput', 'active' => ['pickups.*', 'pickup-requests.*'], 'navBadge' => $pendingPickupRequests])
     @endhasanyrole
 
     @hasanyrole('pemilik|kasir|pegawai')
@@ -28,6 +32,7 @@
 
     @role('pemilik')
         @include('layouts.partials.nav-item', ['route' => 'promos.index', 'icon' => 'tag', 'label' => 'Promo', 'active' => 'promos.*'])
+        @include('layouts.partials.nav-item', ['route' => 'packages.index', 'icon' => 'package', 'label' => 'Paket Laundry', 'active' => 'packages.*'])
         @include('layouts.partials.nav-item', ['route' => 'expenses.index', 'icon' => 'receipt', 'label' => 'Pengeluaran', 'active' => 'expenses.*'])
         @include('layouts.partials.nav-item', ['route' => 'inventory.index', 'icon' => 'box', 'label' => 'Inventori', 'active' => 'inventory.*'])
         @include('layouts.partials.nav-item', ['route' => 'reports.index', 'icon' => 'bar-chart-3', 'label' => 'Laporan', 'active' => 'reports.*'])
